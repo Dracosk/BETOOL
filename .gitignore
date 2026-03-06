@@ -1,0 +1,13 @@
+# Archivos de datos exportados (No subir excels o csv a la nube)
+*.csv
+*.xlsx
+
+# Archivos Cache 
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Entornos virtuales
+
+venv/
+env/
