@@ -71,6 +71,12 @@ def markets_names(url_cuotas):
 
     
 def bet_finder(match_url):
+    """ 
+    A fuction that exctract all possible bets in Main Market of a match
+    
+    params: a url of a match not accept a simple string
+    
+    returns: a simple DataFrame containing bets"""
     extract = betano_extract(match_url)
     if 'data' not in extract:
         return pd.DataFrame()
@@ -124,5 +130,7 @@ def composter(league_url):
     conection = pd.concat(df_list, ignore_index=True)
     return conection
     
+
+
 
     
