@@ -4,6 +4,16 @@ from curl_cffi import requests
 import time
 
 def json_response(page_url):
+    """
+    Perform a GET requests to an URL and convert the response to JSON.
+
+    Args:
+        page_url(str): Complete URL to perform a requests.
+    
+    Returns:
+        dict: A Python dictionary containing the JSON response. Returns None if the requests fails.
+
+    """
     
     response = requests.get(page_url, impersonate='chrome120', verify= False)
     if response.status_code == 200:
@@ -19,6 +29,15 @@ def json_response(page_url):
 
 
 def url_extract(results_url):
+    """
+    Extract all rounds key to create a complete URL for each round.
+
+    Args:
+        results_url(str): URL from results page.
+    
+    Returns:
+        list: A list with each round URL
+    """
     
     page = json_response(results_url)
     results = page['roundFilters']
@@ -34,8 +53,18 @@ def url_extract(results_url):
 
 
 def find_results(jornada_url):
-    time.sleep(5)
+    """
+    Extracts basic information and scores for each game within a specific round.
+
+    Args:
+        jornada_url(str): URL from rounds page.
+    
+    Returns:
+        list: A list of dictionaries, where each dictionary contains basic details of a match.
+    """
     response = json_response(jornada_url)
+    if response is None:
+        return []
     baul = response['games']    
     result = []
     for partidos in baul:
@@ -59,7 +88,19 @@ def find_results(jornada_url):
     return result
     
 def finding_matchurl(jornada_url):
+    """
+    Extracts the statistics URLs for all matches in a given round.
+
+    Args:
+        jornada_url(str): Complete URL from a specific round.
+
+    Returns:
+        stats_url(list): A list of matches URLs pointing to the detailed statistics of each match. 
+    """
     page = json_response(jornada_url)
+    if page is None:
+        return []
+    
     cajon = page['games']
     stats_url = []
 
@@ -71,6 +112,15 @@ def finding_matchurl(jornada_url):
     return stats_url
                     
 def stats(match_url):
+    """
+    Extracts essential statistics from a specific match URL providing the complete information for each match.
+
+    Args:
+        match_url(str): A URL from a match.
+    
+    Returns:
+        stats(DataFrame): A pandas DataFrame that contains essential information and statistics from a match.
+    """
     page = json_response(match_url)
     details = find_results(match_url)
     to_dict = dict(details[0])
@@ -113,29 +163,24 @@ def stats(match_url):
     stats.append(to_dict)
     return pd.DataFrame(stats)
 
+def main(round_url):
+    rounds = url_extract(round_url)
+    league = []
+    for matches in rounds:
+        print(f"Extracting round {matches} ")
+        game = finding_matchurl(matches)
+        for statistics in game:
+            try:
+                df_details = stats(statistics)
+                league.append(df_details)
+            except Exception as e:
+                print(f"Error in match {statistics}: {e}")
+            time.sleep(3)
+            clean = pd.concat(league, ignore_index=True)
+    return clean
 
-
-
-
-
-
-             
-
-#testing_results = find_results('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=7_131_1_1')
-#print(testing_results[-1])
-
-#testeando_otra_jornada = find_results('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=7_131_1_29')
-#print(testeando_otra_jornada[0])
-
-testing_url = finding_matchurl('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=7_131_1_29')
-#print(testing_url[0])
-
-finding = json_response('https://webws.365scores.com/web/game/stats/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&games=4452632')
-#print(finding['statistics'][0])
-#print(type(finding['statistics'][0]))
+pd.set_option("display.max_columns", None)
 pd.set_option('display.width', 1000)
-pd.set_option('display.max_columns', None)
-estats = stats('https://webws.365scores.com/web/game/stats/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&games=4452632')
-print(estats)
-proving = estats['Away_Shots_in_Target']
-print(proving)
+testing = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
+testing_csv = testing.to_csv("Premier_League.csv", index  = True)
+print(testing)
