@@ -164,6 +164,16 @@ def stats(match_url):
     return pd.DataFrame(stats)
 
 def main(round_url):
+    """
+    Orchestrates data extraction by calling key fuctions to extract statistics for each round and compiles the results into a single DataFrame.
+    
+    Args:
+        round_url(str): URL from results page.
+    
+    Returns:
+        DataFrame: A pandas DataFrame containing the compiled statistics for all matches across the rounds.
+
+    """
     rounds = url_extract(round_url)
     league = []
     for matches in rounds:
@@ -176,10 +186,19 @@ def main(round_url):
             except Exception as e:
                 print(f"Error in match {statistics}: {e}")
             time.sleep(3)
-            clean = pd.concat(league, ignore_index=True)
-    return clean
+            df = pd.concat(league, ignore_index=True)
+    return df
 
 def teams(page_url):
+    """ 
+    Extracts the teams information from a league and compiles it into a DataFrame.
+
+    Args:
+        page_url(str): URL from league page.
+
+    Returns:
+        DataFrame: A pandas DataFrame containing the team IDs and names for the league.
+    """
     response = json_response(page_url)
     folder = response['competitors']
     team_list = []
@@ -194,6 +213,16 @@ def teams(page_url):
     return pd.DataFrame(clean)
 
 def league(page_url):
+    """ 
+    Extracts the league information from a league page and compiles it into a DataFrame.
+
+    Args:
+        page_url(str): URL from league page.
+    
+    Returns:
+        DataFrame: A pandas DataFrame containing the league ID and name for the league.
+    """
+
     response = json_response(page_url)
     page = response['competitions']
     league_namer = []
