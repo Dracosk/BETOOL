@@ -237,12 +237,36 @@ def league(page_url):
     cleaner = tuple(league_namer)
     df = pd.DataFrame(cleaner)
     return df
- 
+
+def fixtures(fixtures_url):
+    response = json_response(fixtures_url)
+    page = response['games']    
+    fixture_list = []
+    for games in page:
+        round = games['stageName']
+        id = games['id']
+        date = pd.to_datetime(games['startTime'])
+        local_id = games['homeCompetitor']['id']
+        away_id = games['awayCompetitor']['id']
+        fixture = {
+            "Round":round,
+            "Game_Id": id,
+            "Game_Date": date,
+            "Local_Id": local_id,
+            "Away_Id": away_id
+        }
+        fixture_list.append(fixture)
+    return pd.DataFrame(fixture_list)
+
+
 pd.set_option("display.max_columns", None)
 pd.set_option('display.width', 1000)
 #testing = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
 #testing_csv = testing.to_csv("Premier_League.csv", index  = False)
 #print(testing)
 
-testing_leagues = league('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
-print(testing_leagues)
+#testing_leagues = league('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
+#print(testing_leagues)
+
+testing_fixture = fixtures('https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=5930&includeTopBettingOpportunity=1&topBookmaker=14')
+print(testing_fixture)

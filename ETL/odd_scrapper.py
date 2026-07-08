@@ -1,5 +1,4 @@
 from curl_cffi import requests
-from bs4 import BeautifulSoup
 import pandas as pd
 import json
 import time
@@ -20,7 +19,6 @@ def betano_extract(url_name):
         time.sleep(5)
         response = requests.get(url_name, impersonate="chrome120", verify=False)
         if response.status_code == 200:
-
             to_text = response.text
             start_line =  to_text.find("initial_state")
             corchetes = to_text.find('{', start_line)
@@ -36,6 +34,7 @@ def betano_extract(url_name):
             break
         else:
             print(f"Fallo en el codigo {response.status_code} en intento {intento + 1}. Reitentando..")
+
             
     return loader
 

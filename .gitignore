@@ -1,6 +1,7 @@
 # Archivos de datos exportados (No subir excels o csv a la nube)
 *.csv
 *.xlsx
+data/
 
 # Archivos Cache 
 __pycache__/
