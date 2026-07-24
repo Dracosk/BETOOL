@@ -64,8 +64,10 @@ def markets_names(url_cuotas):
     names_finder = pathfinder['data']['event']['markets']
     names_bet = []
     for markets in names_finder:
+        id = markets['id']
         names = markets['name']
-        names_bet.append(names)
+        dict = {'id': id, 'name': names}
+        names_bet.append(dict)
     return names_bet
 
     
@@ -80,14 +82,17 @@ def bet_finder(match_url):
     if 'data' not in extract:
         return pd.DataFrame()
     
+    
     timestamp = dt.now()
     partido = extract['data']['event']['name']
     match_date = pd.to_datetime(extract['data']['event']['startTime'], unit = 'ms')
     market_list = extract['data']['event']['markets']
     full_list = []
+
     
     for markets in market_list:
         market_name = markets['name']
+        market_id = markets['id']
         if 'selections' in markets and len(markets['selections']) > 0:
             selections = markets['selections']
             for selecciones in selections:
@@ -96,6 +101,7 @@ def bet_finder(match_url):
                 match = {'Match': partido,
                          'Date_UTC': match_date,
                          'Market': market_name,
+                         'Market_ID': market_id,
                          'Bet Name': bet_name,
                          'Odd': bet_price,
                          'Timestamp': timestamp
@@ -110,6 +116,7 @@ def bet_finder(match_url):
                         match = {'Match': partido,
                          'Date_UTC': match_date,
                          'Market': market_name,
+                         'Market_ID': market_id,
                          'Bet Name': bet_name,
                          'Odd': bet_price,
                          'Timestamp': timestamp
@@ -130,6 +137,7 @@ def composter(league_url):
     return conection
     
 
-
-
+BET = bet_finder("https://lat.betano.com/cuotas-de-partido/arsenal-fc-coventry-city/87685274/")
+# finder = BET['data']['event']['participants'][0]['name']
+print(BET)
     
