@@ -1,5 +1,5 @@
 import pandas as pd
-import json
+import hashlib
 from curl_cffi import requests
 import time
 
@@ -67,25 +67,26 @@ def find_results(jornada_url):
         return []
     baul = response['games']    
     result = []
-    for partidos in baul:
-        jornada = partidos['roundNum']
-        id = partidos['id']
-        fecha = pd.to_datetime(partidos['startTime'])
-        local_name = partidos['homeCompetitor']['name']
-        score_local = partidos['homeCompetitor']['score']
-        score_visita = partidos['awayCompetitor']['score']
-        visita_name = partidos['awayCompetitor']['name']
-        resultado = {
-            "Jornada":jornada,
+    for matches in baul:
+        round = matches['roundNum']
+        local_name = matches['homeCompetitor']['name']
+        away_name = matches['awayCompetitor']['name']
+        date = pd.to_datetime(matches['startTime']).date()
+        id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
+        score_local = matches['homeCompetitor']['score']
+        score_away = matches['awayCompetitor']['score']
+        match = {
+            "Round":round,
             "Game_Id": id,
-            "Game_Date": fecha,
+            "Game_Date": date,
             "Local": local_name,
-            "Visita": visita_name,
-            "Resultado_Local": score_local,
-            "Resultado_Visita": score_visita
+            "Away": away_name,
+            "Local_Score": score_local,
+            "Away_Score": score_away
                 }
-        result.append(resultado)
+        result.append(match)
     return result
+
     
 def finding_matchurl(jornada_url):
     """
@@ -186,7 +187,8 @@ def main(round_url):
             except Exception as e:
                 print(f"Error in match {statistics}: {e}")
             time.sleep(3)
-            df = pd.concat(league, ignore_index=True)
+
+    df = pd.concat(league, ignore_index=True)
     return df
 
 def teams(page_url):
@@ -239,13 +241,24 @@ def league(page_url):
     return df
 
 def fixtures(fixtures_url):
+    """
+    Extracts the fixtures information from a league page and compiles it into a DataFrame.
+
+    Args:
+        fixtures_url(str): URL from fixtures page.
+
+    Returns:
+        DataFrame: A pandas DataFrame containing the fixtures information for the league.
+    """
     response = json_response(fixtures_url)
     page = response['games']    
     fixture_list = []
     for games in page:
-        round = games['stageName']
-        id = games['id']
-        date = pd.to_datetime(games['startTime'])
+        round = games['roundNum']
+        date = pd.to_datetime(games['startTime']).date()
+        local_name = games['homeCompetitor']['name']
+        away_name = games['awayCompetitor']['name']
+        id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
         local_id = games['homeCompetitor']['id']
         away_id = games['awayCompetitor']['id']
         fixture = {
@@ -268,5 +281,9 @@ pd.set_option('display.width', 1000)
 #testing_leagues = league('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
 #print(testing_leagues)
 
-testing_fixture = fixtures('https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=5930&includeTopBettingOpportunity=1&topBookmaker=14')
-print(testing_fixture)
+#testing_fixture = fixtures('https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
+#print(testing_fixture)
+
+test_main = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=135&includeTopBettingOpportunity=1&topBookmaker=14')
+print(test_main)
+test_main.to_csv('testeo_main.csv', index = False) 
