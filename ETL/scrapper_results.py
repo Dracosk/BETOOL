@@ -3,6 +3,7 @@ import hashlib
 from curl_cffi import requests
 import time
 import unicodedata
+import random
 
 def json_response(page_url):
     """
@@ -45,12 +46,12 @@ def url_extract(results_url):
     match = []
     
     for urls in results[1:]:
-        if urls['isCurrent'] == False:
-            desire = urls['key']
-            desire_url = 'https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=' + desire
-            match.append(desire_url)
-    
+        desire = urls['key']
+        desire_url = 'https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=' + desire
+        match.append(desire_url)
+        
     return match
+    
 
 
 def find_results(jornada_url):
@@ -66,29 +67,39 @@ def find_results(jornada_url):
     response = json_response(jornada_url)
     if response is None:
         return []
+    if 'games' not in response:
+        print(f"No game data found for URL: {jornada_url}")
+        return []
     baul = response['games']    
     result = []
     for matches in baul:
-        round = matches['roundNum']
-        local_name = strip_accents(matches['homeCompetitor']['name'].lower().strip())
-        away_name = strip_accents(matches['awayCompetitor']['name'].lower().strip())
-        date = pd.to_datetime(matches['startTime']).date()
-        id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
-        score_local = matches['homeCompetitor']['score']
-        score_away = matches['awayCompetitor']['score']
-        local_id = matches['homeCompetitor']['id']
-        away_id = matches['awayCompetitor']['id']
-        match = {
-            "Round":round,
-            "Game_Id": id,
-            "Game_Date": date,
-            "Local_ID": local_id,
-            "Away_ID": away_id,
-            "Local_Score": score_local,
-            "Away_Score": score_away
-                }
-        result.append(match)
+        if matches['gameTime'] >= 90.0:
+            
+            round = matches['roundNum']
+            local_name = strip_accents(matches['homeCompetitor']['name'].lower().strip())
+            away_name = strip_accents(matches['awayCompetitor']['name'].lower().strip())
+            date = pd.to_datetime(matches['startTime']).date()
+            id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
+            score_local = matches['homeCompetitor']['score']
+            score_away = matches['awayCompetitor']['score']
+            local_id = matches['homeCompetitor']['id']
+            away_id = matches['awayCompetitor']['id']
+            match = {
+                "Round":round,
+                "Game_Id": id,
+                "Game_Date": date,
+                "Local_ID": local_id,
+                "Away_ID": away_id,
+                "Local_Score": score_local,
+                "Away_Score": score_away
+                        }
+            result.append(match)
+        else:
+            print(f"Match excluded due to unfinished status: game_id {matches['id']} with game time {matches['gameTime']}")
+            continue
+            
     return result
+            
 
     
 def finding_matchurl(jornada_url):
@@ -110,7 +121,7 @@ def finding_matchurl(jornada_url):
 
     for id in cajon:
         game_id = id['id']
-        url = (f'https://webws.365scores.com/web/game/stats/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&games={game_id}')
+        url = (f'https://webws.365scores.com/web/game/stats/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&games={game_id}')
         stats_url.append(url)
 
     return stats_url
@@ -127,6 +138,13 @@ def stats(match_url):
     """
     page = json_response(match_url)
     details = find_results(match_url)
+    
+    if not details:
+        return pd.DataFrame()
+    if 'games' not in page:
+        print(f"No game data found for URL: {match_url}")
+        return pd.DataFrame()
+    
     to_dict = dict(details[0])
     first_box = page['games']
     second_box = page['statistics']
@@ -300,6 +318,6 @@ pd.set_option('display.width', 1000)
 #testing_fixture = fixtures('https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
 #print(testing_fixture)
 
-test_main = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=135&includeTopBettingOpportunity=1&topBookmaker=14')
+test_main = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=135&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5706427588')
 print(test_main)
 test_main.to_csv('testeo_noaccents_main.csv', index = False) 
