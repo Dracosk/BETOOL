@@ -2,6 +2,7 @@ import pandas as pd
 import hashlib
 from curl_cffi import requests
 import time
+import unicodedata
 
 def json_response(page_url):
     """
@@ -69,18 +70,20 @@ def find_results(jornada_url):
     result = []
     for matches in baul:
         round = matches['roundNum']
-        local_name = matches['homeCompetitor']['name']
-        away_name = matches['awayCompetitor']['name']
+        local_name = strip_accents(matches['homeCompetitor']['name'].lower().strip())
+        away_name = strip_accents(matches['awayCompetitor']['name'].lower().strip())
         date = pd.to_datetime(matches['startTime']).date()
         id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
         score_local = matches['homeCompetitor']['score']
         score_away = matches['awayCompetitor']['score']
+        local_id = matches['homeCompetitor']['id']
+        away_id = matches['awayCompetitor']['id']
         match = {
             "Round":round,
             "Game_Id": id,
             "Game_Date": date,
-            "Local": local_name,
-            "Away": away_name,
+            "Local_ID": local_id,
+            "Away_ID": away_id,
             "Local_Score": score_local,
             "Away_Score": score_away
                 }
@@ -186,7 +189,7 @@ def main(round_url):
                 league.append(df_details)
             except Exception as e:
                 print(f"Error in match {statistics}: {e}")
-            time.sleep(3)
+            time.sleep(2)
 
     df = pd.concat(league, ignore_index=True)
     return df
@@ -240,6 +243,19 @@ def league(page_url):
     df = pd.DataFrame(cleaner)
     return df
 
+def strip_accents(text):
+    """
+    Removes accents from a given string.
+
+    Args:
+        text(str): Input string potentially containing accented characters.
+
+    Returns:
+        str: The input string with all accents removed.
+    """
+    nfkd = unicodedata.normalize('NFD', text)
+    return ''.join(c for c in nfkd if unicodedata.category(c) != 'Mn')
+
 def fixtures(fixtures_url):
     """
     Extracts the fixtures information from a league page and compiles it into a DataFrame.
@@ -256,8 +272,8 @@ def fixtures(fixtures_url):
     for games in page:
         round = games['roundNum']
         date = pd.to_datetime(games['startTime']).date()
-        local_name = games['homeCompetitor']['name']
-        away_name = games['awayCompetitor']['name']
+        local_name = strip_accents(games['homeCompetitor']['name'].lower().strip())
+        away_name = strip_accents(games['awayCompetitor']['name'].lower().strip())
         id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
         local_id = games['homeCompetitor']['id']
         away_id = games['awayCompetitor']['id']
@@ -286,4 +302,4 @@ pd.set_option('display.width', 1000)
 
 test_main = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=135&includeTopBettingOpportunity=1&topBookmaker=14')
 print(test_main)
-test_main.to_csv('testeo_main.csv', index = False) 
+test_main.to_csv('testeo_noaccents_main.csv', index = False) 
