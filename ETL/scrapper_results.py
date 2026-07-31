@@ -113,9 +113,11 @@ def finding_matchurl(jornada_url):
         stats_url(list): A list of matches URLs pointing to the detailed statistics of each match. 
     """
     page = json_response(jornada_url)
-    if page is None:
+    if not page or 'games' not in page:
         return []
-    
+    if not page['games']:
+        print(f"No games found for URL: {jornada_url}")
+        return []
     cajon = page['games']
     stats_url = []
 
@@ -284,9 +286,11 @@ def fixtures(fixtures_url):
     Returns:
         DataFrame: A pandas DataFrame containing the fixtures information for the league.
     """
+
     response = json_response(fixtures_url)
     page = response['games']    
     fixture_list = []
+
     for games in page:
         round = games['roundNum']
         date = pd.to_datetime(games['startTime']).date()
@@ -305,19 +309,78 @@ def fixtures(fixtures_url):
         fixture_list.append(fixture)
     return pd.DataFrame(fixture_list)
 
+def season(results_url):
+    
+    season_list = []
+    game = finding_matchurl(results_url)
+    for statistics in game:
+        try:
+            df_details = stats(statistics)
+            season_list.append(df_details)
+        except Exception as e:
+            print(f"Error in match {statistics}: {e}")
+            time.sleep(2)
+
+    actual_url = results_url    
+    while True:
+        next_page_url = scroll_url(actual_url) 
+        
+        if not next_page_url:
+            print("Se alcanzó el final de la historia de la liga.")
+            break
+            
+    
+        nuevas_urls_partidos = finding_matchurl(next_page_url)
+        if not nuevas_urls_partidos:
+            print("No hay más partidos en esta página.")
+            break
+        print(f"Extracting round {next_page_url} ")
+        
+        if not nuevas_urls_partidos:
+            print("No hay más partidos históricos disponibles.")
+            break
+        
+        for url_partido in nuevas_urls_partidos:
+            try:
+                match_stats = stats(url_partido)
+                if not match_stats.empty:
+                    season_list.append(match_stats)
+            except Exception as e:
+                print(f"Error en partido histórico {url_partido}: {e}")
+        actual_url = next_page_url
+        time.sleep(random.uniform(1, 2)) 
+        
+    df_final = pd.concat(season_list, ignore_index=True)
+    df_limpio = df_final.drop_duplicates(subset=['Game_Id'], keep='first')
+
+    return df_limpio
+        
+
+
+def scroll_url(results_url):
+
+    response = json_response(results_url)
+    if not response or 'games' not in response or not response['games']:
+        return []
+    page = response['games']
+    urls = page[-1]
+    game_id = urls['id']
+    scroll_url = f'https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions=7&games=1&aftergame={game_id}&direction=-1'
+    
+    return scroll_url
+
 
 pd.set_option("display.max_columns", None)
 pd.set_option('display.width', 1000)
-#testing = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
-#testing_csv = testing.to_csv("Premier_League.csv", index  = False)
-#print(testing)
 
-#testing_leagues = league('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=14&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
-#print(testing_leagues)
+#old_league = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
 
-#testing_fixture = fixtures('https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
-#print(testing_fixture)
+#test_url = scroll_url('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5708077525')
+#print(test_url)
 
-test_main = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=135&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5706427588')
-print(test_main)
-test_main.to_csv('testeo_noaccents_main.csv', index = False) 
+premier = season('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5708976322')
+print(premier)
+laliga_csv = premier.to_csv('PremierFullSeason2.csv', index = False)
+
+#testeo = scroll_url('https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions=7&games=1&aftergame=4452551&direction=-1')
+#print(testeo)
