@@ -5,7 +5,7 @@ import time
 import unicodedata
 import random
 
-def json_response(page_url):
+def json_response(page_url, max_retries=3):
     """
     Perform a GET requests to an URL and convert the response to JSON.
 
@@ -16,16 +16,27 @@ def json_response(page_url):
         dict: A Python dictionary containing the JSON response. Returns None if the requests fails.
 
     """
-    
-    response = requests.get(page_url, impersonate='chrome120', verify= False)
-    if response.status_code == 200:
-         to_json = response.json()
-    elif response.status_code == 403:
-        print(f"The scrapper has been detected {response.status_code}")
-        return None
-    else:
-        print(f"Something went wrong {response.status_code}")
-        return None
+    for attempt in range(max_retries):
+        try: 
+            response = requests.get(page_url, impersonate='chrome120', verify= False)
+            if response.status_code == 200:
+             to_json = response.json()
+             return to_json
+            elif response.status_code == 403:
+                print(f"The scrapper has been detected {response.status_code}")
+                return None
+            else:
+                print(f"Something went wrong {response.status_code}")
+                time.sleep(2)
+
+        except requests.exceptions.Timeout:
+            tiempo_espera = 5 * (attempt + 1) 
+            print(f"Timeout. Retrying in {tiempo_espera}s (Attempt {attempt + 1}/{max_retries})")
+            time.sleep(tiempo_espera)
+
+        except Exception as e:
+            print(f"Error on attempt {attempt + 1}: {e}")
+            time.sleep(2)
     return to_json
 
 
@@ -310,6 +321,14 @@ def fixtures(fixtures_url):
     return pd.DataFrame(fixture_list)
 
 def season(results_url):
+    """ Extracts the season information from a results page and compiles it into a DataFrame, handling pagination to retrieve all historical matches.
+
+    Args:
+        results_url(str): URL from results page.
+
+    Returns:
+        DataFrame: A pandas DataFrame containing the season information for the league.
+    """
     
     season_list = []
     game = finding_matchurl(results_url)
@@ -358,6 +377,14 @@ def season(results_url):
 
 
 def scroll_url(results_url):
+    """
+    Extracts the URL for the next page of historical matches based on the last match ID from the current results page.
+    
+    Args:
+        results_url(str): URL from results page.
+    
+    Returns:
+        str: A URL for the next page of historical matches. Returns None if there are no more matches to extract."""
 
     response = json_response(results_url)
     if not response or 'games' not in response or not response['games']:
@@ -373,14 +400,14 @@ def scroll_url(results_url):
 pd.set_option("display.max_columns", None)
 pd.set_option('display.width', 1000)
 
-#old_league = main('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14')
 
-#test_url = scroll_url('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5708077525')
-#print(test_url)
+#premier = season('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5708976322')
+#print(premier)
+#laliga_csv = premier.to_csv('PremierFullSeason2.csv', index = False)
 
-premier = season('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5708976322')
-print(premier)
-laliga_csv = premier.to_csv('PremierFullSeason2.csv', index = False)
+bundes =season('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=25&includeTopBettingOpportunity=1&topBookmaker=14&')
+print(bundes)
+bundes_csv = bundes.to_csv('BundesligaFullSeason.csv', index = False)
 
-#testeo = scroll_url('https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions=7&games=1&aftergame=4452551&direction=-1')
-#print(testeo)
+test_flash = json_response('https://www.flashscore.cl/futbol/inglaterra/premier-league/partidos/')
+print(test_flash)
