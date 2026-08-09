@@ -1,3 +1,5 @@
+from ast import While
+
 import pandas as pd
 import hashlib
 from curl_cffi import requests
@@ -63,18 +65,18 @@ def url_extract(results_url):
         
     return match
 
-def fixtures_rounds(results_url):
+def fixtures_rounds(fixtures_url):
     """
     Extract all rounds key to create a complete URL for each round.
 
     Args:
-        results_url(str): URL from results page.
+        fixtures_url(str): URL from fixtures page.
     
     Returns:
         list: A list with each round URL
     """
     
-    page = json_response(results_url)
+    page = json_response(fixtures_url)
     results = page['roundFilters']
     match = []
     
@@ -309,6 +311,15 @@ def strip_accents(text):
     return ''.join(c for c in nfkd if unicodedata.category(c) != 'Mn')
 
 def fixture_stats(fixture_url):
+    """
+    Extracts essential statistics from a specific fixture URL providing the complete information for each match.
+    
+    Args:
+        fixture_url(str): URL of the fixture page.
+
+    Returns:
+        DataFrame: A pandas DataFrame containing the fixture statistics.
+    """
     response = json_response(fixture_url)
     if response is None:
         return []
@@ -355,7 +366,7 @@ def fixtures(fixtures_url):
             fixtures_list.append(df_fixture)
         except Exception as e:
             print(f"Error in fixture {matches}: {e}")
-        time.sleep(random.uniform(0.5, 0.7))
+            time.sleep(random.uniform(0.5, 0.7))
     return pd.concat(fixtures_list, ignore_index=True)
         
 def season(results_url):
@@ -433,8 +444,66 @@ def scroll_url(results_url):
     
     return scroll_url
         
-       
+def scroll_fixtures(fixtures_url):
+    """
+    Extracts the URL for the next page of historical matches based on the last match ID from the current fixtures page.
+    
+    Args:
+        fixtures_url(str): URL from fixtures page.
+    
+    Returns:
+        str: A URL for the next page of historical matches. Returns None if there are no more matches to extract."""
 
+    response = json_response(fixtures_url)
+    if not response or 'games' not in response or not response['games']:
+        return []
+    page = response['games']
+    urls = page[-1]
+    game_id = urls['id']
+    scroll_url = f'https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions=25&games=1&aftergame={game_id}&direction=1'
+    
+    return scroll_url
+       
+def pag_fixtures(fixtures_url):
+    """ 
+    Extracts the fixtures information from a league page and compiles it into a DataFrame, handling pagination to retrieve all historical matches.
+    
+    Args:
+        fixtures_url(str): URL from fixtures page.
+    Returns:
+        DataFrame: A pandas DataFrame containing the fixtures information for the league.
+    """
+    fixtures_list = []
+    actual_url = fixtures_url
+    try:
+        stats = fixture_stats(actual_url)
+        if len(stats) > 0 and isinstance(stats, pd.DataFrame):
+            fixtures_list.append(stats)
+    except Exception as e:
+        print(f"Error in fixture {fixtures_url}: {e}")
+        time.sleep(random.uniform(0.5, 0.7))
+
+    while True:
+        next_page_url = scroll_fixtures(actual_url)
+        if not next_page_url:
+            print("Se alcanzó el final de la historia de la liga.")
+            break
+        
+        try:
+            df_fixture = fixture_stats(next_page_url)
+            if len(df_fixture) > 0 and isinstance(df_fixture, pd.DataFrame):
+                fixtures_list.append(df_fixture)
+        except Exception as e:
+            print(f"Error in fixture {next_page_url}: {e}")
+            time.sleep(random.uniform(0.5, 0.7))
+        actual_url = next_page_url
+
+    df_final = pd.concat(fixtures_list, ignore_index=True)
+    df_clean = df_final.drop_duplicates(subset=['Game_Id'], keep='first')
+    return df_clean
+
+        
+    
                 
 
 

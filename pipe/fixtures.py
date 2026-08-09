@@ -13,15 +13,22 @@ leagues = {'Premier League':'https://webws.365scores.com/web/games/fixtures/?app
 
 for league_name,url in leagues.items():
     try:
-        df = res.fixtures(url)
+        try:
+            df = res.fixtures(url)
+        except Exception as e:
+            if 'roundFilters' in str(e):
+                df = res.pag_fixtures(url)
+            else:
+                raise e
         achieve_name = f'{league_name}_fixtures.parquet'
-        print(f"Uploading {achieve_name} to bucket")
         df.to_parquet(achieve_name, index=False)
         s3.upload_to_s3('fact_fixture', achieve_name)
-        time.sleep(random.uniform(180, 300))
-
-    except Exception as e:
+        time.sleep(random.uniform(60, 180))
+    except Exception as e:  
         print(f"Error processing league {league_name}: {e}")
+            
         
+
+    
 
    
