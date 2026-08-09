@@ -1,6 +1,7 @@
-# Archivos de datos exportados (No subir excels o csv a la nube)
+# Archivos de datos exportados 
 *.csv
 *.xlsx
+*.parquet
 data/
 
 # Archivos Cache 

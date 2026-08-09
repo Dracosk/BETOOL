@@ -37,7 +37,7 @@ def json_response(page_url, max_retries=3):
         except Exception as e:
             print(f"Error on attempt {attempt + 1}: {e}")
             time.sleep(2)
-    return to_json
+    return {}
 
 
 
@@ -62,7 +62,28 @@ def url_extract(results_url):
         match.append(desire_url)
         
     return match
+
+def fixtures_rounds(results_url):
+    """
+    Extract all rounds key to create a complete URL for each round.
+
+    Args:
+        results_url(str): URL from results page.
     
+    Returns:
+        list: A list with each round URL
+    """
+    
+    page = json_response(results_url)
+    results = page['roundFilters']
+    match = []
+    
+    for urls in results[1:]:
+        desire = urls['key']
+        desire_url = 'https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=' + desire
+        match.append(desire_url)
+        
+    return match    
 
 
 def find_results(jornada_url):
@@ -287,6 +308,35 @@ def strip_accents(text):
     nfkd = unicodedata.normalize('NFD', text)
     return ''.join(c for c in nfkd if unicodedata.category(c) != 'Mn')
 
+def fixture_stats(fixture_url):
+    response = json_response(fixture_url)
+    if response is None:
+        return []
+    if 'games' not in response:
+        print(f"No game data found for URL: {fixture_url}")
+        return []
+    baul = response['games']    
+    fixture_list = []
+    for games in baul:
+        round = games['roundNum']
+        date = pd.to_datetime(games['startTime']).date()
+        local_name = strip_accents(games['homeCompetitor']['name'].lower().strip())
+        away_name = strip_accents(games['awayCompetitor']['name'].lower().strip())
+        id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
+        local_id = games['homeCompetitor']['id']
+        away_id = games['awayCompetitor']['id']
+        timestamp = pd.Timestamp.now()
+        fixture = {
+            "Round":round,
+            "Game_Id": id,
+            "Game_Date": date,
+            "Local_Id": local_id,
+            "Away_Id": away_id,
+            "Timestamp": timestamp
+        }
+        fixture_list.append(fixture)
+    return pd.DataFrame(fixture_list)
+
 def fixtures(fixtures_url):
     """
     Extracts the fixtures information from a league page and compiles it into a DataFrame.
@@ -297,29 +347,17 @@ def fixtures(fixtures_url):
     Returns:
         DataFrame: A pandas DataFrame containing the fixtures information for the league.
     """
-
-    response = json_response(fixtures_url)
-    page = response['games']    
-    fixture_list = []
-
-    for games in page:
-        round = games['roundNum']
-        date = pd.to_datetime(games['startTime']).date()
-        local_name = strip_accents(games['homeCompetitor']['name'].lower().strip())
-        away_name = strip_accents(games['awayCompetitor']['name'].lower().strip())
-        id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
-        local_id = games['homeCompetitor']['id']
-        away_id = games['awayCompetitor']['id']
-        fixture = {
-            "Round":round,
-            "Game_Id": id,
-            "Game_Date": date,
-            "Local_Id": local_id,
-            "Away_Id": away_id
-        }
-        fixture_list.append(fixture)
-    return pd.DataFrame(fixture_list)
-
+    rounds_url = fixtures_rounds(fixtures_url)
+    fixtures_list = []
+    for matches in rounds_url:
+        try:
+            df_fixture = fixture_stats(matches)
+            fixtures_list.append(df_fixture)
+        except Exception as e:
+            print(f"Error in fixture {matches}: {e}")
+        time.sleep(random.uniform(0.5, 0.7))
+    return pd.concat(fixtures_list, ignore_index=True)
+        
 def season(results_url):
     """ Extracts the season information from a results page and compiles it into a DataFrame, handling pagination to retrieve all historical matches.
 
@@ -367,14 +405,13 @@ def season(results_url):
             except Exception as e:
                 print(f"Error en partido histórico {url_partido}: {e}")
         actual_url = next_page_url
-        time.sleep(random.uniform(1, 2)) 
+        time.sleep(random.uniform(0.5,0.7)) 
         
     df_final = pd.concat(season_list, ignore_index=True)
     df_limpio = df_final.drop_duplicates(subset=['Game_Id'], keep='first')
 
     return df_limpio
         
-
 
 def scroll_url(results_url):
     """
@@ -395,19 +432,12 @@ def scroll_url(results_url):
     scroll_url = f'https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions=7&games=1&aftergame={game_id}&direction=-1'
     
     return scroll_url
+        
+       
+
+                
 
 
-pd.set_option("display.max_columns", None)
-pd.set_option('display.width', 1000)
 
 
-#premier = season('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&lastUpdateId=5708976322')
-#print(premier)
-#laliga_csv = premier.to_csv('PremierFullSeason2.csv', index = False)
 
-bundes =season('https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=25&includeTopBettingOpportunity=1&topBookmaker=14&')
-print(bundes)
-bundes_csv = bundes.to_csv('BundesligaFullSeason.csv', index = False)
-
-test_flash = json_response('https://www.flashscore.cl/futbol/inglaterra/premier-league/partidos/')
-print(test_flash)
