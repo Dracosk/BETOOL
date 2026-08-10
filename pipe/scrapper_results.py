@@ -264,7 +264,7 @@ def teams(page_url):
 
     for teams in folder:
         team_id = teams['id']
-        team_name = teams['name']
+        team_name = strip_accents(teams['name']).lower().strip()
         loader = {'team_id': team_id,
                   'team_name': team_name}
         team_list.append(loader)
@@ -283,19 +283,13 @@ def league(page_url):
     """
 
     response = json_response(page_url)
-    page = response['competitions']
-    league_namer = []
-    
-    for league in page:
-        league_id = league['id']
-        league_name = league['name']
-        apply = {'league_id': league_id,
-                 'name': league_name}
-        league_namer.append(apply)
-    
-    cleaner = tuple(league_namer)
-    df = pd.DataFrame(cleaner)
+    if not response or 'competitions' not in response:
+        return pd.DataFrame()
+    page = response['competitions'][0]
+    df = pd.DataFrame([{'league_id': page['id'], 'league_name': page['name']}])
     return df
+    
+   
 
 def strip_accents(text):
     """
