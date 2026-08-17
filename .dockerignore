@@ -1,0 +1,5 @@
+.env
+.aws
+.git
+__pycache__/
+venv/

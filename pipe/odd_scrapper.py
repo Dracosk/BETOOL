@@ -8,11 +8,11 @@ def betano_extract(url_name):
     """
     This fuction extract the html from betano to a pure JSON object, I recommend using it in the league url to scrapp all urls from matches later
     
-    params: 
-    url_name: an url from betano ideally a league url from football/competitions/league
+    Args:
+        url_name(str): an url from betano ideally a league url from football/competitions/league
     
-    returns:
-    JSON object to be cleaned
+    Returns:
+        loader(JSON): A JSON object to be cleaned
     """
     loader = {}
     for intento in range(3):
@@ -43,24 +43,32 @@ def beturl_extract(purify_json):
     """ 
     With this fuction we found the urls for each match that contains all bets we need
     
-    params:
-        purfiy_json: A loaded html to json object (use betano_extract fuction before)
+    Args:
+        purfiy_json(dict): A loaded html to json object (use betano_extract fuction before)
     
-    returns:
-        url_cuotas: Urls from each matches containing all possible bets """
+    Returns:
+        url_bets(list): Urls from each matches containing all possible bets """
     events = purify_json['data']['blocks'][0]['events']
-    url_cuotas =[]
+    url_bets =[]
     for index in range(len(events)):
         url = events[index]['url']
         if '/cuotas-de-partido/' in url:
             full_url = "https://lat.betano.com" + url
-            url_cuotas.append(full_url)
-    return url_cuotas
+            url_bets.append(full_url)
+    return url_bets
 
 
-def markets_names(url_cuotas):
+def markets_names(url_bets):
+    """
+    A fuction that extract the names and ids of all possible markets in a match
+
+    Args:
+        url_bets(str): a url of a match not accept a simple string
     
-    pathfinder = betano_extract(url_cuotas)
+    Returns:
+        names_bet(list): a list of dictionaries containing the id and name of each market"""
+    
+    pathfinder = betano_extract(url_bets)
     names_finder = pathfinder['data']['event']['markets']
     names_bet = []
     for markets in names_finder:
@@ -75,26 +83,27 @@ def bet_finder(match_url):
     """ 
     A fuction that exctract all possible bets in Main Market of a match
     
-    params: a url of a match not accept a simple string
+    Args:
+        match_url(str): a url of a match not accept a simple string
     
-    returns: a simple DataFrame containing bets"""
+    Returns:
+        DataFrame: a simple DataFrame containing bets"""
     extract = betano_extract(match_url)
     if 'data' not in extract:
         return pd.DataFrame()
-    
-    
+
     timestamp = dt.now()
     partido = extract['data']['event']['name']
     match_date = pd.to_datetime(extract['data']['event']['startTime'], unit = 'ms')
     market_list = extract['data']['event']['markets']
     full_list = []
 
-    
     for markets in market_list:
         market_name = markets['name']
         market_id = markets['id']
         if 'selections' in markets and len(markets['selections']) > 0:
             selections = markets['selections']
+            selections_id = markets['id']
             for selecciones in selections:
                 bet_name = selecciones['name']
                 bet_price = selecciones['price']
@@ -102,6 +111,7 @@ def bet_finder(match_url):
                          'Date_UTC': match_date,
                          'Market': market_name,
                          'Market_ID': market_id,
+                         'Bet_ID': selections_id,
                          'Bet Name': bet_name,
                          'Odd': bet_price,
                          'Timestamp': timestamp
@@ -117,6 +127,7 @@ def bet_finder(match_url):
                          'Date_UTC': match_date,
                          'Market': market_name,
                          'Market_ID': market_id,
+                         'Bet_ID': selections_id,
                          'Bet Name': bet_name,
                          'Odd': bet_price,
                          'Timestamp': timestamp
@@ -125,7 +136,15 @@ def bet_finder(match_url):
     return pd.DataFrame(full_list)
         
 
-def composter(league_url):
+def main(league_url):
+    """ 
+    A fuction that exctract all possible bets in Main Market of all matches in a league
+    
+    Args: 
+        league_url(str): a url of a league not accept a simple string
+    
+    Returns: 
+        DataFrame: Concat all DataFrames containing all bets for each match in a league"""
     league_scrap = betano_extract(league_url)
     league = beturl_extract(league_scrap)
     df_list = []
@@ -137,7 +156,4 @@ def composter(league_url):
     return conection
     
 
-BET = bet_finder("https://lat.betano.com/cuotas-de-partido/arsenal-fc-coventry-city/87685274/")
-# finder = BET['data']['event']['participants'][0]['name']
-print(BET)
-    
+

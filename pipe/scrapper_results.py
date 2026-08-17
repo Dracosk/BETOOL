@@ -1,11 +1,10 @@
-from ast import While
-
 import pandas as pd
 import hashlib
 from curl_cffi import requests
 import time
 import unicodedata
 import random
+import re
 
 def json_response(page_url, max_retries=3):
     """
@@ -25,19 +24,20 @@ def json_response(page_url, max_retries=3):
              to_json = response.json()
              return to_json
             elif response.status_code == 403:
-                print(f"The scrapper has been detected {response.status_code}")
+                #print(f"The scrapper has been detected {response.status_code}")
                 return None
             else:
-                print(f"Something went wrong {response.status_code}")
-                time.sleep(2)
+                dead_time = (4 ** attempt) + random.uniform(0.5, 2.0)
+                #print(f"Something went wrong {response.status_code}, Retrying in {dead_time:.2f}s (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(dead_time)
 
         except requests.exceptions.Timeout:
             tiempo_espera = 5 * (attempt + 1) 
-            print(f"Timeout. Retrying in {tiempo_espera}s (Attempt {attempt + 1}/{max_retries})")
+            #print(f"Timeout. Retrying in {tiempo_espera}s (Attempt {attempt + 1}/{max_retries})")
             time.sleep(tiempo_espera)
 
         except Exception as e:
-            print(f"Error on attempt {attempt + 1}: {e}")
+            #print(f"Error on attempt {attempt + 1}: {e}")
             time.sleep(2)
     return {}
 
@@ -56,14 +56,20 @@ def url_extract(results_url):
     
     page = json_response(results_url)
     results = page['roundFilters']
-    match = []
+    
+    match_reg = re.search(r'(?:competitions?|league_id|league)[=/](\d+)', results_url, re.IGNORECASE)
+    if match_reg:
+        league_id = match_reg.group(1)
+    else:
+        raise ValueError(f"¡ERROR! No se encontró el league_id en esta URL: {results_url}")
+    url_list = []
     
     for urls in results[1:]:
         desire = urls['key']
-        desire_url = 'https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=' + desire
-        match.append(desire_url)
+        desire_url = f'https://webws.365scores.com/web/games/results/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions={league_id}&roundKey={desire}'
+        url_list.append(desire_url)
         
-    return match
+    return url_list
 
 def fixtures_rounds(fixtures_url):
     """
@@ -78,14 +84,18 @@ def fixtures_rounds(fixtures_url):
     
     page = json_response(fixtures_url)
     results = page['roundFilters']
-    match = []
-    
+    match_reg = re.search(r'(?:competitions?|league_id|league)[=/](\d+)', fixtures_url, re.IGNORECASE)
+    if match_reg:
+        league_id = match_reg.group(1)
+    else:
+        raise ValueError(f"¡ERROR! No se encontró el league_id en esta URL: {fixtures_url}")
+    url_list = []
     for urls in results[1:]:
         desire = urls['key']
-        desire_url = 'https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=7&includeTopBettingOpportunity=1&topBookmaker=14&roundKey=' + desire
-        match.append(desire_url)
+        desire_url = f'https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions={league_id}&roundKey={desire}'
+        url_list.append(desire_url)
         
-    return match    
+    return url_list
 
 
 def find_results(jornada_url):
@@ -99,14 +109,16 @@ def find_results(jornada_url):
         list: A list of dictionaries, where each dictionary contains basic details of a match.
     """
     response = json_response(jornada_url)
+    
     if response is None:
         return []
     if 'games' not in response:
-        print(f"No game data found for URL: {jornada_url}")
+       # print(f"No game data found for URL: {jornada_url}")
         return []
     baul = response['games']    
     result = []
     for matches in baul:
+        league_id = matches.get('competitionId')
         if matches['gameTime'] >= 90.0:
             
             round = matches['roundNum']
@@ -118,18 +130,22 @@ def find_results(jornada_url):
             score_away = matches['awayCompetitor']['score']
             local_id = matches['homeCompetitor']['id']
             away_id = matches['awayCompetitor']['id']
+            timestamp = pd.Timestamp.now()
             match = {
+                "Timestamp": timestamp,
                 "Round":round,
-                "Game_Id": id,
+                "League_id": league_id,
+                "Game_id": id,
                 "Game_Date": date,
-                "Local_ID": local_id,
-                "Away_ID": away_id,
+                "Local_id": local_id,
+                "Away_id": away_id,
                 "Local_Score": score_local,
                 "Away_Score": score_away
                         }
             result.append(match)
+            time.sleep(random.uniform(0.3, 0.35))
         else:
-            print(f"Match excluded due to unfinished status: game_id {matches['id']} with game time {matches['gameTime']}")
+            #print(f"Match excluded due to unfinished status: game_id {matches['id']} with game time {matches['gameTime']}")
             continue
             
     return result
@@ -150,7 +166,7 @@ def finding_matchurl(jornada_url):
     if not page or 'games' not in page:
         return []
     if not page['games']:
-        print(f"No games found for URL: {jornada_url}")
+        #print(f"No games found for URL: {jornada_url}")
         return []
     cajon = page['games']
     stats_url = []
@@ -178,7 +194,7 @@ def stats(match_url):
     if not details:
         return pd.DataFrame()
     if 'games' not in page:
-        print(f"No game data found for URL: {match_url}")
+       # print(f"No game data found for URL: {match_url}")
         return pd.DataFrame()
     
     to_dict = dict(details[0])
@@ -235,15 +251,15 @@ def main(round_url):
     rounds = url_extract(round_url)
     league = []
     for matches in rounds:
-        print(f"Extracting round {matches} ")
+        # print(f"Extracting round {matches} ")
         game = finding_matchurl(matches)
         for statistics in game:
             try:
                 df_details = stats(statistics)
                 league.append(df_details)
             except Exception as e:
-                print(f"Error in match {statistics}: {e}")
-            time.sleep(2)
+            #print(f"Error in match {statistics}: {e}")
+                time.sleep(2)
 
     df = pd.concat(league, ignore_index=True)
     return df
@@ -268,8 +284,8 @@ def teams(page_url):
         loader = {'team_id': team_id,
                   'team_name': team_name}
         team_list.append(loader)
-    clean = tuple(team_list)
-    return pd.DataFrame(clean)
+    
+    return pd.DataFrame(team_list)
 
 def league(page_url):
     """ 
@@ -318,8 +334,13 @@ def fixture_stats(fixture_url):
     if response is None:
         return []
     if 'games' not in response:
-        print(f"No game data found for URL: {fixture_url}")
+        #print(f"No game data found for URL: {fixture_url}")
         return []
+    match_reg = re.search(r'(?:competitions?|league_id|league)[=/](\d+)', fixture_url, re.IGNORECASE)
+    if match_reg:
+        league_id = int(match_reg.group(1))
+    else:
+        raise ValueError(f"Error: URL without league information detected in fixture_stats: {fixture_url}")
     baul = response['games']    
     fixture_list = []
     for games in baul:
@@ -333,10 +354,11 @@ def fixture_stats(fixture_url):
         timestamp = pd.Timestamp.now()
         fixture = {
             "Round":round,
-            "Game_Id": id,
+            "League_id": league_id,
+            "Game_id": id,
             "Game_Date": date,
-            "Local_Id": local_id,
-            "Away_Id": away_id,
+            "Local_id": local_id,
+            "Away_id": away_id,
             "Timestamp": timestamp
         }
         fixture_list.append(fixture)
@@ -359,7 +381,7 @@ def fixtures(fixtures_url):
             df_fixture = fixture_stats(matches)
             fixtures_list.append(df_fixture)
         except Exception as e:
-            print(f"Error in fixture {matches}: {e}")
+            #print(f"Error in fixture {matches}: {e}")
             time.sleep(random.uniform(0.5, 0.7))
     return pd.concat(fixtures_list, ignore_index=True)
         
@@ -408,12 +430,13 @@ def season(results_url):
                 if not match_stats.empty:
                     season_list.append(match_stats)
             except Exception as e:
-                print(f"Error en partido histórico {url_partido}: {e}")
+                #print(f"Error en partido histórico {url_partido}: {e}")
+                pass
         actual_url = next_page_url
-        time.sleep(random.uniform(0.5,0.7)) 
+        time.sleep(random.uniform(0.1,0.2)) 
         
     df_final = pd.concat(season_list, ignore_index=True)
-    df_limpio = df_final.drop_duplicates(subset=['Game_Id'], keep='first')
+    df_limpio = df_final.drop_duplicates(subset=['Game_id'], keep='first')
 
     return df_limpio
         
@@ -431,12 +454,18 @@ def scroll_url(results_url):
     response = json_response(results_url)
     if not response or 'games' not in response or not response['games']:
         return []
+    match_reg = re.search(r'(?:competitions?|league_id|league)[=/](\d+)', results_url, re.IGNORECASE)
+    if match_reg:
+        league_id = match_reg.group(1)
+    else:
+        raise ValueError(f"Error: URL without league information detected in scroll_url: {results_url}")
     page = response['games']
     urls = page[-1]
     game_id = urls['id']
-    scroll_url = f'https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions=7&games=1&aftergame={game_id}&direction=-1'
-    
+    scroll_url = f'https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions={league_id}&games=1&aftergame={game_id}&direction=-1'
+
     return scroll_url
+    
         
 def scroll_fixtures(fixtures_url):
     """
@@ -451,12 +480,20 @@ def scroll_fixtures(fixtures_url):
     response = json_response(fixtures_url)
     if not response or 'games' not in response or not response['games']:
         return []
+
+    match_reg = re.search(r'(?:competitions?|league_id|league)[=/](\d+)', fixtures_url, re.IGNORECASE)
+    if match_reg:
+        league_id = match_reg.group(1)
+    else:
+        raise ValueError(f"Error: URL without league information detected in scroll_url: {fixtures_url}")
+    
     page = response['games']
     urls = page[-1]
     game_id = urls['id']
-    scroll_url = f'https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions=25&games=1&aftergame={game_id}&direction=1'
-    
+    scroll_url = f'https://webws.365scores.com/web/games/?langId=1&timezoneId=72&userCountryId=28&apptype=5&competitions={league_id}&games=1&aftergame={game_id}&direction=1'
     return scroll_url
+
+    
        
 def pag_fixtures(fixtures_url):
     """ 
@@ -474,7 +511,7 @@ def pag_fixtures(fixtures_url):
         if len(stats) > 0 and isinstance(stats, pd.DataFrame):
             fixtures_list.append(stats)
     except Exception as e:
-        print(f"Error in fixture {fixtures_url}: {e}")
+        #print(f"Error in fixture {fixtures_url}: {e}")
         time.sleep(random.uniform(0.5, 0.7))
 
     while True:
@@ -488,12 +525,12 @@ def pag_fixtures(fixtures_url):
             if len(df_fixture) > 0 and isinstance(df_fixture, pd.DataFrame):
                 fixtures_list.append(df_fixture)
         except Exception as e:
-            print(f"Error in fixture {next_page_url}: {e}")
+            #print(f"Error in fixture {next_page_url}: {e}")
             time.sleep(random.uniform(0.5, 0.7))
         actual_url = next_page_url
 
     df_final = pd.concat(fixtures_list, ignore_index=True)
-    df_clean = df_final.drop_duplicates(subset=['Game_Id'], keep='first')
+    df_clean = df_final.drop_duplicates(subset=['Game_id'], keep='first')
     return df_clean
 
         
