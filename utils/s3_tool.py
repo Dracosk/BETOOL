@@ -2,7 +2,7 @@ import boto3
 from dotenv import load_dotenv
 
 load_dotenv()
-NOMBRE_DEL_BUCKET = 'bot-etl-s3-bucket'
+NOMBRE_DEL_BUCKET = 'betool-dl'
 
 def upload_to_s3(folder, archive_name):
     try:

@@ -332,10 +332,10 @@ def fixture_stats(fixture_url):
     """
     response = json_response(fixture_url)
     if response is None:
-        return []
+        return pd.DataFrame()
     if 'games' not in response:
         #print(f"No game data found for URL: {fixture_url}")
-        return []
+        return pd.DataFrame()
     match_reg = re.search(r'(?:competitions?|league_id|league)[=/](\d+)', fixture_url, re.IGNORECASE)
     if match_reg:
         league_id = int(match_reg.group(1))

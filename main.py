@@ -1,5 +1,7 @@
 import sys
 import subprocess
+import time
+import random
 
 def run_module(module_name):
     subprocess.run([sys.executable, "-m", f'pipe.{module_name}'], check=True)
@@ -7,6 +9,7 @@ def run_module(module_name):
 
 def run_main():
     run_module("fixtures")
+    time.sleep(random.uniform(0.7, 1)) 
     run_module("results")
     print("Daily tasks executed successfully.")
 
