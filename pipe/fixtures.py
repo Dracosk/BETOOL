@@ -11,6 +11,7 @@ leagues = {'Premier League':'https://webws.365scores.com/web/games/fixtures/?app
            'Ligue 1':'https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=35'}
           
 
+df_cols = ['Game_id', 'Local_id', 'Away_id']
 tp = pd.Timestamp.now().strftime('%Y-%m-%d_%H-%M-%S')
 for league_name,url in leagues.items():
     try:
@@ -21,10 +22,18 @@ for league_name,url in leagues.items():
                 df = res.pag_fixtures(url)
             else:
                 raise e
-        achieve_name = f'{league_name}_fixtures_{tp}.parquet'
-        df.to_parquet(achieve_name, index=False)
-        s3.upload_to_s3('fact_fixture', achieve_name)
-        time.sleep(random.uniform(30, 60))
+        hash_data = str(pd.util.hash_pandas_object(df[df_cols], index=False).sum())
+        hash_file_name = f'{league_name}_fixtures_hash.txt'
+        upload_fixtures = s3.hash_get(s3.NOMBRE_DEL_BUCKET, f'latest_hash/{hash_file_name}', hash_data)
+        if upload_fixtures == True:
+            achieve_name = f'{league_name}_fixtures_{tp}.parquet'
+            df.to_parquet(achieve_name, index=False)
+            s3.upload_to_s3('fact_fixture', achieve_name)
+            time.sleep(random.uniform(20, 40))
+        else:
+            print(f"[-]No new data for league {league_name}. Skipping.")
+            time.sleep(random.uniform(10, 30))
+            continue
     except Exception as e:  
         print(f"Error processing league {league_name}: {e}")
             
