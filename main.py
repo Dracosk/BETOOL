@@ -11,6 +11,8 @@ def run_main():
     run_module("fixtures")
     time.sleep(random.uniform(0.7, 1)) 
     run_module("results")
+    time.sleep(random.uniform(0.5, 0.7))
+    run_module("odds")
     print("Daily tasks executed successfully.")
 
 if __name__ == "__main__":
@@ -19,7 +21,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     module_name = sys.argv[1].lower()
-    valid_modules = ["fixtures", "leagues", "teams", "results"]
+    valid_modules = ["fixtures", "leagues", "teams", "results", "odds"]
 
     if module_name == "daily":
         run_main()

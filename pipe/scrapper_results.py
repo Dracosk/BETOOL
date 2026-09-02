@@ -402,7 +402,7 @@ def season(results_url):
             df_details = stats(statistics)
             season_list.append(df_details)
         except Exception as e:
-            print(f"Error in match {statistics}: {e}")
+            #print(f"Error in match {statistics}: {e}")
             time.sleep(2)
 
     actual_url = results_url    
@@ -410,15 +410,15 @@ def season(results_url):
         next_page_url = scroll_url(actual_url) 
         
         if not next_page_url:
-            print("Se alcanzó el final de la historia de la liga.")
+            #print("End of the league history.")
             break
             
     
         nuevas_urls_partidos = finding_matchurl(next_page_url)
         if not nuevas_urls_partidos:
-            print("No hay más partidos en esta página.")
+            #print("No more historical matches available.")
             break
-        print(f"Extracting round {next_page_url} ")
+        #print(f"Extracting round {next_page_url} ")
         
         if not nuevas_urls_partidos:
             print("No hay más partidos históricos disponibles.")
@@ -517,7 +517,7 @@ def pag_fixtures(fixtures_url):
     while True:
         next_page_url = scroll_fixtures(actual_url)
         if not next_page_url:
-            print("Se alcanzó el final de la historia de la liga.")
+            #print("End of the league history.")
             break
         
         try:

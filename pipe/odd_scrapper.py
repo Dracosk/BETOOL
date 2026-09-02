@@ -1,3 +1,4 @@
+import unicodedata
 from curl_cffi import requests
 import pandas as pd
 import json
@@ -16,7 +17,7 @@ def betano_extract(url_name):
     """
     loader = {}
     for intento in range(3):
-        time.sleep(5)
+        time.sleep(intento * 2)
         response = requests.get(url_name, impersonate="chrome120", verify=False)
         if response.status_code == 200:
             to_text = response.text
@@ -93,26 +94,25 @@ def bet_finder(match_url):
         return pd.DataFrame()
 
     timestamp = dt.now()
-    partido = extract['data']['event']['name']
-    match_date = pd.to_datetime(extract['data']['event']['startTime'], unit = 'ms')
+    home = strip_accents(extract['data']['event']['participants'][0]['name'].lower().strip())
+    away = strip_accents(extract['data']['event']['participants'][1]['name'].lower().strip())
+    match_date = pd.to_datetime(extract['data']['event']['startTime'], unit = 'ms').date()
     market_list = extract['data']['event']['markets']
     full_list = []
 
     for markets in market_list:
         market_name = markets['name']
-        market_id = markets['id']
         if 'selections' in markets and len(markets['selections']) > 0:
             selections = markets['selections']
-            selections_id = markets['id']
             for selecciones in selections:
                 bet_name = selecciones['name']
                 bet_price = selecciones['price']
-                match = {'Match': partido,
-                         'Date_UTC': match_date,
+                match = {
+                         'Home': home,
+                         'Away': away,
+                         'Date': match_date,
                          'Market': market_name,
-                         'Market_ID': market_id,
-                         'Bet_ID': selections_id,
-                         'Bet Name': bet_name,
+                         'Bet_Name': bet_name,
                          'Odd': bet_price,
                          'Timestamp': timestamp
                              }
@@ -123,12 +123,11 @@ def bet_finder(match_url):
                     for selections in rows['selections']:
                         bet_name = selections['name']
                         bet_price = selections['price']
-                        match = {'Match': partido,
-                         'Date_UTC': match_date,
+                        match = {'Home': home,
+                         'Away': away,
+                         'Date': match_date,
                          'Market': market_name,
-                         'Market_ID': market_id,
-                         'Bet_ID': selections_id,
-                         'Bet Name': bet_name,
+                         'Bet_Name': bet_name,
                          'Odd': bet_price,
                          'Timestamp': timestamp
                              }
@@ -148,12 +147,25 @@ def main(league_url):
     league_scrap = betano_extract(league_url)
     league = beturl_extract(league_scrap)
     df_list = []
-    for match in league[:6]:
-        print(f"Analyzing {match}")
+    for match in league[:11]:
+        #print(f"Analyzing {match}")
         df_match = bet_finder(match)
         df_list.append(df_match)
     conection = pd.concat(df_list, ignore_index=True)
     return conection
     
+def strip_accents(text):
+    """
+    Removes accents from a given string.
+
+    Args:
+        text(str): Input string potentially containing accented characters.
+
+    Returns:
+        str: The input string with all accents removed.
+    """
+    nfkd = unicodedata.normalize('NFD', text)
+    return ''.join(c for c in nfkd if unicodedata.category(c) != 'Mn')
+
 
 

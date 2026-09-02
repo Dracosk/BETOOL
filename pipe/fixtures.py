@@ -24,15 +24,15 @@ for league_name,url in leagues.items():
                 raise e
         hash_data = str(pd.util.hash_pandas_object(df[df_cols], index=False).sum())
         hash_file_name = f'{league_name}_fixtures_hash.txt'
-        upload_fixtures = s3.hash_get(s3.NOMBRE_DEL_BUCKET, f'latest_hash/{hash_file_name}', hash_data)
+        upload_fixtures = s3.hash_get(f'latest_hash/{hash_file_name}', hash_data)
         if upload_fixtures == True:
             achieve_name = f'{league_name}_fixtures_{tp}.parquet'
             df.to_parquet(achieve_name, index=False)
             s3.upload_to_s3('fact_fixture', achieve_name)
-            time.sleep(random.uniform(20, 40))
+            time.sleep(random.uniform(10, 15))
         else:
             print(f"[-]No new data for league {league_name}. Skipping.")
-            time.sleep(random.uniform(10, 30))
+            time.sleep(random.uniform(10, 15))
             continue
     except Exception as e:  
         print(f"Error processing league {league_name}: {e}")

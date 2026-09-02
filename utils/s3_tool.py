@@ -16,7 +16,7 @@ def upload_to_s3(folder, archive_name):
         return False
     return ruta_s3 
 
-def hash_get(NOMBRE_DEL_BUCKET, route, lt_hash):
+def hash_get(route, lt_hash):
     try:
         s3_out = boto3.client('s3')
         s3 = s3_out.get_object(Bucket= NOMBRE_DEL_BUCKET, Key=route)

@@ -19,12 +19,12 @@ for league_name,url in leagues.items():
         df = res.main(url)
         hash_data = str(pd.util.hash_pandas_object(df[df_cols], index=False).sum())
         hash_file_name = f'{league_name}_results_hash.txt'
-        upload_result = s3.hash_get(s3.NOMBRE_DEL_BUCKET, f'latest_hash/{hash_file_name}', hash_data)
+        upload_result = s3.hash_get(f'latest_hash/{hash_file_name}', hash_data)
         if upload_result == True:
             archive_name = f'{league_name}_results_{tp}.parquet'
             df.to_parquet(archive_name, index=False)
             s3.upload_to_s3('fact_matches', archive_name)
-            time.sleep(random.uniform(10, 30))
+            time.sleep(random.uniform(10, 12))
             continue
         else:
             print(f"[-]No new data for league {league_name}. Skipping.")
