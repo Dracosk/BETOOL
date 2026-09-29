@@ -3,6 +3,8 @@
 *.xlsx
 *.parquet
 data/
+models/
+.json
 
 # Archivos Cache 
 __pycache__/

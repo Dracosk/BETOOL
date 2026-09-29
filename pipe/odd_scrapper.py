@@ -54,7 +54,7 @@ def beturl_extract(purify_json):
     for index in range(len(events)):
         url = events[index]['url']
         if '/cuotas-de-partido/' in url:
-            full_url = "https://lat.betano.com" + url
+            full_url = "https://www.betanosports.com" + url
             url_bets.append(full_url)
     return url_bets
 
@@ -100,20 +100,32 @@ def bet_finder(match_url):
     market_list = extract['data']['event']['markets']
     full_list = []
 
+    valid_markets = ['resultado del partido', 'doble oportunidad', 'goles totales mas/menos', 'ambos equipos anotan', 'corners mas/menos']
+
     for markets in market_list:
-        market_name = markets['name']
+        market_name = strip_accents(markets['name']).lower().strip()
+        if market_name not in valid_markets:
+            continue
         if 'selections' in markets and len(markets['selections']) > 0:
             selections = markets['selections']
             for selecciones in selections:
-                bet_name = selecciones['name']
+                bet_name = strip_accents(selecciones['name']).lower().strip()
+                if market_name == 'doble oportunidad':
+                    if bet_name == f"{home} o empate":
+                        bet_name = '1X'
+                    elif bet_name == f"{away} o empate":
+                        bet_name = '2X'
+                    elif bet_name == f"{home} o {away}":
+                        bet_name = '12'
+                        
                 bet_price = selecciones['price']
                 match = {
                          'Home': home,
                          'Away': away,
-                         'Date': match_date,
-                         'Market': market_name,
-                         'Bet_Name': bet_name,
-                         'Odd': bet_price,
+                         'date': match_date,
+                         'market': market_name,
+                         'bet_name': bet_name,
+                         'odd': bet_price,
                          'Timestamp': timestamp
                              }
                 full_list.append(match)
@@ -125,10 +137,10 @@ def bet_finder(match_url):
                         bet_price = selections['price']
                         match = {'Home': home,
                          'Away': away,
-                         'Date': match_date,
-                         'Market': market_name,
-                         'Bet_Name': bet_name,
-                         'Odd': bet_price,
+                         'date': match_date,
+                         'market': market_name,
+                         'bet_name': bet_name,
+                         'odd': bet_price,
                          'Timestamp': timestamp
                              }
                         full_list.append(match)

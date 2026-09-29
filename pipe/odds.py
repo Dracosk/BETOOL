@@ -21,11 +21,11 @@ def team_id(team_name):
     return None
 
 leagues = {
-    'Premier League':'https://lat.betano.com/sport/futbol/inglaterra/premier-league/1/?bt=matchresult',
-   'LaLiga':'https://lat.betano.com/sport/futbol/espana/laliga/5/?bt=matchresult',
-    'Serie A':'https://lat.betano.com/sport/futbol/italia/serie-a/1635/?bt=matchresult',
-    'Bundesliga':'https://lat.betano.com/sport/futbol/alemania/bundesliga/216/?bt=matchresult',
-    'Ligue 1':'https://lat.betano.com/sport/futbol/francia/ligue-1/215/?bt=matchresult'
+    'Premier League':'https://www.betanosports.com/sport/futbol/inglaterra/premier-league/1/?bt=matchresult',
+   'LaLiga':'https://www.betanosports.com/sport/futbol/espana/laliga/5/?bt=matchresult',
+    'Serie A':'https://www.betanosports.com/sport/futbol/italia/serie-a/1635/?bt=matchresult',
+    'Bundesliga':'https://www.betanosports.com/sport/futbol/alemania/bundesliga/216/?bt=matchresult',
+    'Ligue 1':'https://www.betanosports.com/sport/futbol/francia/ligue-1/215/?bt=matchresult'
 }
 session = boto3.Session(region_name='us-east-2')
 query = wr.athena.read_sql_query("SELECT * FROM db_betool.dim_teams", database="db_betool", ctas_approach=False, s3_output='s3://betool-dl/query_results/', boto3_session=session)
@@ -44,10 +44,10 @@ for league_name, league_url in leagues.items():
         df['Home_id'] = df['Home_id'].astype('Int16')
         df['Away_id'] = df['Away_id'].astype('Int16')
 
-        hash_text = df['Home_id'].map(to_name).astype(str) + '_' + df['Away_id'].map(to_name).astype(str) + '_' + df['Date'].astype(str)
-        df['Game_id'] = hash_text.apply(lambda x: hashlib.md5(x.encode('utf-8')).hexdigest()[:12])
+        hash_text = df['Home_id'].map(to_name).astype(str) + '_' + df['Away_id'].map(to_name).astype(str) + '_' + df['date'].astype(str)
+        df['game_id'] = hash_text.apply(lambda x: hashlib.md5(x.encode('utf-8')).hexdigest()[:12])
         df.drop(columns= ['Home', 'Away', 'Home_id', 'Away_id'], inplace=True)
-        df = df[['Game_id', 'Date', 'Market', 'Bet_Name', 'Odd', 'Timestamp']]
+        df = df[['game_id', 'date', 'market', 'bet_name', 'odd', 'Timestamp']]
 
         archive_name = f'{league_name}_odds_{tp}.parquet'
         df.to_parquet(archive_name, index=False)
