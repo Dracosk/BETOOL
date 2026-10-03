@@ -21,7 +21,38 @@ def query_athena(query):
         s3_output='s3://betool-dl/query_results/',
         boto3_session=session)
     return df
-
+def check_models_exist():
+    """
+    Check if the required machine learning models exist in the S3 bucket.
+    
+    Returns:
+        bool: True if all models exist, False otherwise."""
+    s3 = boto3.client('s3')
+    bucket_name = 'betool-dl'
+    os.makedirs('ml/models', exist_ok=True)
+    model_names = [
+        'model_target_1x2.json',
+        'model_target_total_corners.json',
+        'model_target_dc_1x.json',
+        'model_target_dc_2x.json',
+        'model_target_ou_o15.json',
+        'model_target_ou_o25.json',
+        'model_target_btts.json',
+        'model_target_corners_o65.json',
+        'model_target_corners_o75.json',
+        'model_target_corners_o85.json',
+        'model_target_dc_12.json'
+    ]
+    for model_name in model_names:
+        local_path = f'ml/models/{model_name}'
+        if not os.path.exists(local_path):
+            try:
+                s3.download_file(bucket_name, f'ml_models/ml/models/{model_name}', local_path)
+            except Exception as e:
+                print(f"Error downloading {model_name} from S3: {e}")
+                return False
+    return True
+            
 def build_fixtures_features(df_matches, df_fixtures,window=5):
     """
     Build features for match fixtures by querying the necessary data from Athena.
@@ -145,7 +176,7 @@ def build_fixtures_features(df_matches, df_fixtures,window=5):
     df_final = df_merged.dropna(subset=features_columns).reset_index(drop=True)
     return df_final, features_columns
 
-def calculate_kelly_stake(prob, odd, kelly_fraction=0.10, min_ev=0.04, max_stake=3.0):
+def calculate_kelly_stake(prob, odd, kelly_fraction=0.05, min_ev=0.04, max_stake=3.0):
     """
     Calculate the Kelly stake based on the probability of winning and the odds.
     
@@ -155,9 +186,13 @@ def calculate_kelly_stake(prob, odd, kelly_fraction=0.10, min_ev=0.04, max_stake
         kelly_fraction (float): The fraction of the Kelly stake to use (default is 0.25).
         min_ev (float): The minimum expected value to consider a bet (default is 0.04).
         max_stake (float): The maximum stake to use (default is 5.0)."""
-
+    if prob < 0.45:
+        return 0.0, 0.0
+    if odd > 3.2 or odd <= 1.15:
+        return 0.0, 0.0
+    
     ev = (prob * odd) - 1
-    if ev < min_ev or odd <= 1.15 or prob <= 0.45:
+    if ev < min_ev or ev > 0.25:
         return 0.0, round(ev * 100, 2)
 
     kelly_pct = (ev / (odd - 1)) * 100
@@ -165,6 +200,7 @@ def calculate_kelly_stake(prob, odd, kelly_fraction=0.10, min_ev=0.04, max_stake
     return round(stake_pct, 2), round(ev * 100, 2)
 
 def prediction_run():
+    check_models_exist()
     df_matches = query_athena("SELECT * FROM db_betool.v_matches")
     df_fixtures = query_athena("SELECT * FROM db_betool.v_fixtures")
     df_odds = query_athena("SELECT * FROM db_betool.v_odds")
@@ -180,7 +216,7 @@ def prediction_run():
 
     models_dir = os.path.join("ml", "models")
     model_1x2 = xgb.XGBClassifier()
-    model_1x2.load_model(os.path.join(models_dir, 'model_1x2.json'))
+    model_1x2.load_model(os.path.join(models_dir, 'model_target_1x2.json'))
     expected_cols = model_1x2.get_booster().feature_names
     X_upcoming = df_pred[expected_cols]
 
@@ -196,7 +232,7 @@ def prediction_run():
         df_pred[f'prob_{target}'] = m.predict_proba(X_upcoming)[:, 1]
 
     model_reg = xgb.XGBRegressor()
-    model_reg.load_model(os.path.join(models_dir, 'model_total_corners.json'))
+    model_reg.load_model(os.path.join(models_dir, 'model_target_total_corners.json'))
     df_pred['expected_corners'] = model_reg.predict(X_upcoming)
 
     records= []
@@ -216,8 +252,8 @@ def prediction_run():
             ('goles totales mas/menos', 'menos de 1.5', 1 - row['prob_target_ou_o15']),
             ('goles totales mas/menos', 'mas de 2.5', row['prob_target_ou_o25']),
             ('goles totales mas/menos', 'menos de 2.5', 1 - row['prob_target_ou_o25']),
-            ('Ambos equipos anotan', 'si', row['prob_target_btts']),
-            ('Ambos equipos anotan', 'no', 1 - row['prob_target_btts']),
+            ('ambos equipos anotan', 'si', row['prob_target_btts']),
+            ('ambos equipos anotan', 'no', 1 - row['prob_target_btts']),
             ('corners mas/menos', 'mas de 6.5 córners', row['prob_target_corners_o65']),
             ('corners mas/menos', 'mas de 7.5 córners', row['prob_target_corners_o75']),
             ('corners mas/menos', 'mas de 8.5 córners', row['prob_target_corners_o85'])
@@ -250,9 +286,5 @@ def prediction_run():
     df_best_bets.drop(columns=['team_id'], inplace=True)
     df_best_bets = df_best_bets.loc[df_best_bets.groupby('game_id')['ev_pct'].idxmax()].reset_index(drop=True)
     df_best_bets = df_best_bets.sort_values(by='ev_pct', ascending=False)
-    #print(f"\n {len(df_best_bets)} opportunities found:")
-    #print(df_best_bets[['game_date', 'local', 'away', 'market', 'bet_name', 'model_prob', 'odd', 'ev_pct', 'bank_pct']].head(20).to_string(index=False))
+    
     return df_best_bets
-
-if __name__ == "__main__":
-    prediction_run()

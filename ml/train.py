@@ -3,6 +3,7 @@ import xgboost as xgb
 import pandas as pd
 from sklearn.metrics import accuracy_score, log_loss, mean_absolute_error
 from ml.features import create_feature, load_results
+from utils.s3_tool import upload_to_s3
 
 def train_models():
     
@@ -54,7 +55,7 @@ def train_models():
     accuracy_1x2 = accuracy_score(y_test_1x2, preds_1x2)
     loss_1x2 = log_loss(y_test_1x2, probs_1x2)
     #print(f"{'1X2':<22} | {accuracy_1x2:<20.4f} | {loss_1x2:.4f}")
-    model_1x2.save_model(os.path.join(models_dir, 'model_1x2.json'))
+    model_1x2.save_model(os.path.join(models_dir, 'model_target_1x2.json'))
 
     for target in target_binary:
         y_train = train_df[target].astype('int')
@@ -104,12 +105,19 @@ def train_models():
     preds_reg = model_reg.predict(X_test)
     mae_reg = mean_absolute_error(y_test_reg, preds_reg)
     #print(f"{'total Corners':<22} | {'N/A':<20} | {mae_reg:.4f}")
-    model_reg.save_model(os.path.join(models_dir, 'model_total_corners.json'))
+    model_reg.save_model(os.path.join(models_dir, 'model_target_total_corners.json'))
+    
+    names = ['target_1x2', 'target_total_corners'] + target_binary
+    for name in names:
+        achive_name = f'ml/models/model_{name}.json'
+        upload_to_s3('ml_models', achive_name)
+
     return model_1x2, model, model_reg
 
 if __name__ == "__main__":
     train_models()
-    
+
+
     
     
     

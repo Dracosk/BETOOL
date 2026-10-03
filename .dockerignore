@@ -1,8 +1,13 @@
 .env
 .aws
 .git
+
 __pycache__/
 venv/
 data/
 models/
-.json
+
+*.json
+*.csv
+*.parquet
+

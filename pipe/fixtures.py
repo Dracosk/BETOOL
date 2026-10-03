@@ -37,7 +37,7 @@ for league_name,url in leagues.items():
     except Exception as e:  
         print(f"Error processing league {league_name}: {e}")
             
-        
+       
 
     
 

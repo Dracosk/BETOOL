@@ -84,7 +84,7 @@ def create_feature(df, window=5):
             df_away.groupby('team_id')[m]
             .transform(lambda x: x.shift(1).rolling(window=window, min_periods=2).mean())
         )
-
+    # Df with only the rolling metrics for home and away teams
     home_v_clean = df_home[['game_id', 'team_id', 'home_only_pts', 'home_only_gf', 'home_only_ga']]
     away_v_clean = df_away[['game_id', 'team_id', 'away_only_pts', 'away_only_gf', 'away_only_ga']] 
     
@@ -109,7 +109,7 @@ def create_feature(df, window=5):
     # New variables for target creation
     df_merged['local_gd_rolling'] = df_merged['local_gf_rolling_mean'] - df_merged['local_ga_rolling_mean']
     df_merged['away_gd_rolling'] = df_merged['away_gf_rolling_mean'] - df_merged['away_ga_rolling_mean']
-
+    # Variables for feature creation
     df_merged['diff_pts'] = df_merged['local_pts_rolling_mean'] - df_merged['away_pts_rolling_mean']
     df_merged['diff_gd'] = df_merged['local_gd_rolling'] - df_merged['away_gd_rolling']
     df_merged['diff_gf'] = df_merged['local_gf_rolling_mean'] - df_merged['away_gf_rolling_mean']
@@ -117,18 +117,18 @@ def create_feature(df, window=5):
     df_merged['diff_shots_target'] = df_merged['local_shots_target_rolling_mean'] - df_merged['away_shots_target_rolling_mean']
     df_merged['diff_possession'] = df_merged['local_possession_rolling_mean'] - df_merged['away_possession_rolling_mean']
     df_merged['diff_corners'] = df_merged['local_corners_rolling_mean'] - df_merged['away_corners_rolling_mean']
-
+    # Additional features for venue advantage
     df_merged['venue_diff_pts'] = df_merged['home_only_pts'] - df_merged['away_only_pts']
     df_merged['venue_diff_gf'] = df_merged['home_only_gf'] - df_merged['away_only_gf']
-
+    # Efficiency metrics
     df_merged['local_effec'] = df_merged['local_gf_rolling_mean'] / (df_merged['local_shots_target_rolling_mean'] + 0.001)
     df_merged['away_effec'] = df_merged['away_gf_rolling_mean'] / (df_merged['away_shots_target_rolling_mean'] + 0.001)
-
+    # Additional features
     df_merged['sum_gf'] = df_merged['local_gf_rolling_mean'] + df_merged['away_gf_rolling_mean']
     df_merged['sum_ga'] = df_merged['local_ga_rolling_mean'] + df_merged['away_ga_rolling_mean']
     df_merged['sum_shots_target'] = df_merged['local_shots_target_rolling_mean'] + df_merged['away_shots_target_rolling_mean']
     df_merged['sum_corners'] = df_merged['local_corners_rolling_mean'] + df_merged['away_corners_rolling_mean']
-
+    # Target variables
     df_merged['target_1x2'] = np.where(df_merged['local_score'] > df_merged['away_score'], 0,
                                         np.where(df_merged['local_score'] == df_merged['away_score'], 1, 2))
     df_merged['target_dc_1x'] = np.where(df_merged['local_score'] >= df_merged['away_score'], 1, 0)
@@ -150,7 +150,6 @@ def create_feature(df, window=5):
 
     return df_final, features_columns
 
-if __name__ == "__main__":
-    raw_df = load_results()
-    dataset, X_cols = create_feature(raw_df, window=5)
+
+    
    
