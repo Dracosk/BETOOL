@@ -63,28 +63,28 @@ def build_fixtures_features(df_matches, df_fixtures,window=5):
     df = df_matches.copy()
     df['game_date'] = pd.to_datetime(df['game_date'])
 
-    home_poss = df['home_possesion'].astype(str).str.replace('%', '', regex=False).astype(int)
-    away_poss = df['away_possesion'].astype(str).str.replace('%', '', regex=False).astype(int)
+    home_poss = df['home_possession'].astype(str).str.replace('%', '', regex=False).astype(int)
+    away_poss = df['away_possession'].astype(str).str.replace('%', '', regex=False).astype(int)
 
     num_cols = [
-        'local_score', 'away_score','home_possesion', 'away_possesion',
+        'home_score', 'away_score','home_possession', 'away_possession',
         'home_total_shots', 'away_total_shots','home_shots_in_target', 'away_shots_in_target',
         'home_corners', 'away_corners']
 
     for col in num_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    home_pts = np.where(df['local_score'] > df['away_score'], 3,
-                       np.where(df['local_score'] == df['away_score'], 1, 0))
-    away_pts = np.where(df['local_score'] < df['away_score'], 3,
-                       np.where(df['local_score'] == df['away_score'], 1, 0))
+    home_pts = np.where(df['home_score'] > df['away_score'], 3,
+                       np.where(df['home_score'] == df['away_score'], 1, 0))
+    away_pts = np.where(df['home_score'] < df['away_score'], 3,
+                       np.where(df['home_score'] == df['away_score'], 1, 0))
 
     df_home = pd.DataFrame({
         'game_id': df['game_id'],
         'game_date': df['game_date'],
-        'team_id': df['local_id'],
+        'team_id': df['home_id'],
         'pts': home_pts,
-        'gf': df['local_score'],
+        'gf': df['home_score'],
         'ga': df['away_score'],
         'possession': home_poss,
         'shots': df['home_total_shots'],
@@ -98,7 +98,7 @@ def build_fixtures_features(df_matches, df_fixtures,window=5):
         'team_id': df['away_id'],
         'pts': away_pts,
         'gf': df['away_score'],
-        'ga': df['local_score'],
+        'ga': df['home_score'],
         'possession': away_poss,
         'shots': df['away_total_shots'],
         'shots_target': df['away_shots_in_target'],
@@ -134,45 +134,45 @@ def build_fixtures_features(df_matches, df_fixtures,window=5):
     rolling_metrics = [f'{m}_rolling_mean' for m in metrics]
     general_form = df_combined.groupby('team_id')[rolling_metrics].last().reset_index()
 
-    df_merged = df_fixtures.merge(general_form, left_on='local_id', right_on='team_id', how='left').rename(columns={col: f'local_{col}' for col in rolling_metrics}).drop(columns=['team_id'])
+    df_merged = df_fixtures.merge(general_form, left_on='home_id', right_on='team_id', how='left').rename(columns={col: f'home_{col}' for col in rolling_metrics}).drop(columns=['team_id'])
     df_merged = df_merged.merge(general_form, left_on='away_id', right_on='team_id', how='left').rename(columns={col: f'away_{col}' for col in rolling_metrics}).drop(columns=['team_id'])
 
-    df_merged = df_merged.merge(home_only_form, left_on='local_id', right_on='team_id', how='left').drop(columns=['team_id'])
+    df_merged = df_merged.merge(home_only_form, left_on='home_id', right_on='team_id', how='left').drop(columns=['team_id'])
     df_merged = df_merged.merge(away_only_form, left_on='away_id', right_on='team_id', how='left').drop(columns=['team_id'])
 
-    df_merged['local_gd_rolling'] = df_merged['local_gf_rolling_mean'] - df_merged['local_ga_rolling_mean']
+    df_merged['home_gd_rolling'] = df_merged['home_gf_rolling_mean'] - df_merged['home_ga_rolling_mean']
     df_merged['away_gd_rolling'] = df_merged['away_gf_rolling_mean'] - df_merged['away_ga_rolling_mean']
 
-    df_merged['diff_pts'] = df_merged['local_pts_rolling_mean'] - df_merged['away_pts_rolling_mean']
-    df_merged['diff_gd'] = df_merged['local_gd_rolling'] - df_merged['away_gd_rolling']
-    df_merged['diff_gf'] = df_merged['local_gf_rolling_mean'] - df_merged['away_gf_rolling_mean']
-    df_merged['diff_ga'] = df_merged['local_ga_rolling_mean'] - df_merged['away_ga_rolling_mean']
-    df_merged['diff_shots_target'] = df_merged['local_shots_target_rolling_mean'] - df_merged['away_shots_target_rolling_mean']
-    df_merged['diff_possession'] = df_merged['local_possession_rolling_mean'] - df_merged['away_possession_rolling_mean']
-    df_merged['diff_corners'] = df_merged['local_corners_rolling_mean'] - df_merged['away_corners_rolling_mean']
+    df_merged['diff_pts'] = df_merged['home_pts_rolling_mean'] - df_merged['away_pts_rolling_mean']
+    df_merged['diff_gd'] = df_merged['home_gd_rolling'] - df_merged['away_gd_rolling']
+    df_merged['diff_gf'] = df_merged['home_gf_rolling_mean'] - df_merged['away_gf_rolling_mean']
+    df_merged['diff_ga'] = df_merged['home_ga_rolling_mean'] - df_merged['away_ga_rolling_mean']
+    df_merged['diff_shots_target'] = df_merged['home_shots_target_rolling_mean'] - df_merged['away_shots_target_rolling_mean']
+    df_merged['diff_possession'] = df_merged['home_possession_rolling_mean'] - df_merged['away_possession_rolling_mean']
+    df_merged['diff_corners'] = df_merged['home_corners_rolling_mean'] - df_merged['away_corners_rolling_mean']
 
     df_merged['venue_diff_pts'] = df_merged['home_only_pts'] - df_merged['away_only_pts']
     df_merged['venue_diff_gf'] = df_merged['home_only_gf'] - df_merged['away_only_gf']
 
-    df_merged['local_effec'] = df_merged['local_gf_rolling_mean'] / (df_merged['local_shots_target_rolling_mean'] + 0.001)
+    df_merged['home_effec'] = df_merged['home_gf_rolling_mean'] / (df_merged['home_shots_target_rolling_mean'] + 0.001)
     df_merged['away_effec'] = df_merged['away_gf_rolling_mean'] / (df_merged['away_shots_target_rolling_mean'] + 0.001)
 
-    df_merged['sum_gf'] = df_merged['local_gf_rolling_mean'] + df_merged['away_gf_rolling_mean']
-    df_merged['sum_ga'] = df_merged['local_ga_rolling_mean'] + df_merged['away_ga_rolling_mean']
-    df_merged['sum_shots_target'] = df_merged['local_shots_target_rolling_mean'] + df_merged['away_shots_target_rolling_mean']
-    df_merged['sum_corners'] = df_merged['local_corners_rolling_mean'] + df_merged['away_corners_rolling_mean']
+    df_merged['sum_gf'] = df_merged['home_gf_rolling_mean'] + df_merged['away_gf_rolling_mean']
+    df_merged['sum_ga'] = df_merged['home_ga_rolling_mean'] + df_merged['away_ga_rolling_mean']
+    df_merged['sum_shots_target'] = df_merged['home_shots_target_rolling_mean'] + df_merged['away_shots_target_rolling_mean']
+    df_merged['sum_corners'] = df_merged['home_corners_rolling_mean'] + df_merged['away_corners_rolling_mean']
 
     extra_cols = [
         'home_only_pts', 'home_only_gf', 'home_only_ga',
         'away_only_pts', 'away_only_gf', 'away_only_ga',
-        'local_gd_rolling', 'away_gd_rolling',
+        'home_gd_rolling', 'away_gd_rolling',
         'diff_pts', 'diff_gd', 'diff_gf', 'diff_ga',
         'diff_shots_target', 'diff_possession', 'diff_corners',
         'venue_diff_pts', 'venue_diff_gf',
-        'local_effec', 'away_effec',
+        'home_effec', 'away_effec',
         'sum_gf', 'sum_ga', 'sum_shots_target', 'sum_corners'
     ]
-    features_columns = [f'local_{m}' for m in rolling_metrics] + [f'away_{m}' for m in rolling_metrics] + extra_cols
+    features_columns = [f'home_{m}' for m in rolling_metrics] + [f'away_{m}' for m in rolling_metrics] + extra_cols
     df_final = df_merged.dropna(subset=features_columns).reset_index(drop=True)
     return df_final, features_columns
 
@@ -239,7 +239,7 @@ def prediction_run():
     for _, row in df_pred.iterrows():
         gid = row['game_id']
         gdate = row['game_date'].strftime('%Y-%m-%d')
-        loc, awy = row['local_id'], row['away_id']
+        hom, awy = row['home_id'], row['away_id']
 
         markets_map = [
             ('resultado del partido', '1', row['prob_1']),
@@ -262,7 +262,7 @@ def prediction_run():
             records.append({
                 'game_id': gid,
                 'game_date': gdate,
-                'local_id': loc,
+                'home_id': hom,
                 'away_id': awy,
                 'market': mkt,
                 'bet_name': bname,
@@ -273,18 +273,18 @@ def prediction_run():
     df_value = df_long_prob.merge(df_odds[['game_id', 'market', 'bet_name', 'odd']], on=['game_id', 'market', 'bet_name'], how='inner')
 
     stake_evs = df_value.apply(lambda row: calculate_kelly_stake(row['model_prob'], row['odd']), axis=1)
-    df_value['bank_pct'] = [x[0] for x in stake_evs]
-    df_value['ev_pct'] = [x[1] for x in stake_evs]
+    df_value['bank'] = [x[0] for x in stake_evs]
+    df_value['ev'] = [x[1] for x in stake_evs]
 
-    df_best_bets = df_value[df_value['bank_pct'] > 0].sort_values(by='ev_pct', ascending=False).reset_index(drop=True)
-    df_best_bets = df_best_bets.merge(df_teams, left_on='local_id', right_on='team_id', how='left')
-    df_best_bets.rename(columns={'team_name': 'local'}, inplace=True)
+    df_best_bets = df_value[df_value['bank'] > 0].sort_values(by='ev', ascending=False).reset_index(drop=True)
+    df_best_bets = df_best_bets.merge(df_teams, left_on='home_id', right_on='team_id', how='left')
+    df_best_bets.rename(columns={'team_name': 'home'}, inplace=True)
     df_best_bets.drop(columns=['team_id'], inplace=True)
 
     df_best_bets = df_best_bets.merge(df_teams, left_on='away_id', right_on='team_id', how='left')
     df_best_bets.rename(columns={'team_name': 'away'}, inplace=True)
     df_best_bets.drop(columns=['team_id'], inplace=True)
-    df_best_bets = df_best_bets.loc[df_best_bets.groupby('game_id')['ev_pct'].idxmax()].reset_index(drop=True)
-    df_best_bets = df_best_bets.sort_values(by='ev_pct', ascending=False)
+    df_best_bets = df_best_bets.loc[df_best_bets.groupby('game_id')['ev'].idxmax()].reset_index(drop=True)
+    df_best_bets = df_best_bets.sort_values(by='ev', ascending=False)
     
     return df_best_bets

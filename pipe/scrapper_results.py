@@ -122,10 +122,10 @@ def find_results(jornada_url):
         if matches['gameTime'] >= 90.0:
             
             round = matches['roundNum']
-            local_name = strip_accents(matches['homeCompetitor']['name'].lower().strip())
+            home_name = strip_accents(matches['homeCompetitor']['name'].lower().strip())
             away_name = strip_accents(matches['awayCompetitor']['name'].lower().strip())
             date = pd.to_datetime(matches['startTime']).date()
-            id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
+            id = hashlib.md5(f"{home_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
             score_local = matches['homeCompetitor']['score']
             score_away = matches['awayCompetitor']['score']
             local_id = matches['homeCompetitor']['id']
@@ -137,9 +137,9 @@ def find_results(jornada_url):
                 "League_id": league_id,
                 "Game_id": id,
                 "Game_Date": date,
-                "Local_id": local_id,
+                "Home_id": local_id,
                 "Away_id": away_id,
-                "Local_Score": score_local,
+                "Home_Score": score_local,
                 "Away_Score": score_away
                         }
             result.append(match)
@@ -203,17 +203,17 @@ def stats(match_url):
     stats = []
 
     for ids in first_box:
-        local_id = ids['homeCompetitor']['id']
+        home_id = ids['homeCompetitor']['id']
         away_id = ids['awayCompetitor']['id']
     
     for statisticas in second_box:
-        if statisticas['id'] == 10 and statisticas['competitorId'] == local_id:
+        if statisticas['id'] == 10 and statisticas['competitorId'] == home_id:
             home_possesion = statisticas['value']
-        if statisticas['id'] == 3 and statisticas['competitorId'] == local_id:
+        if statisticas['id'] == 3 and statisticas['competitorId'] == home_id:
             home_total_shots = statisticas['value']
-        if statisticas['id'] == 4 and statisticas['competitorId'] == local_id:
+        if statisticas['id'] == 4 and statisticas['competitorId'] == home_id:
             home_total_target_shots = statisticas['value']
-        if statisticas['id'] == 8 and statisticas['competitorId'] == local_id:
+        if statisticas['id'] == 8 and statisticas['competitorId'] == home_id:
             home_corners = statisticas['value']
         if statisticas['id'] == 10 and statisticas['competitorId'] == away_id:
             away_possesion = statisticas['value']
@@ -224,8 +224,8 @@ def stats(match_url):
         if statisticas['id'] == 8 and statisticas['competitorId'] == away_id:
             away_corners = statisticas['value']
     game = {
-            "Home_Possesion":home_possesion,
-            "Away_Possesion": away_possesion,
+            "Home_Possession":home_possesion,
+            "Away_Possession": away_possesion,
             "Home_Total_Shots":home_total_shots,
             "Away_Total_Shots":away_total_shots,
             "Home_Shots_in_Target": home_total_target_shots,
@@ -346,10 +346,10 @@ def fixture_stats(fixture_url):
     for games in baul:
         round = games['roundNum']
         date = pd.to_datetime(games['startTime']).date()
-        local_name = strip_accents(games['homeCompetitor']['name'].lower().strip())
+        home_name = strip_accents(games['homeCompetitor']['name'].lower().strip())
         away_name = strip_accents(games['awayCompetitor']['name'].lower().strip())
-        id = hashlib.md5(f"{local_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
-        local_id = games['homeCompetitor']['id']
+        id = hashlib.md5(f"{home_name}_{away_name}_{date}".encode('utf-8')).hexdigest()[:12]
+        home_id = games['homeCompetitor']['id']
         away_id = games['awayCompetitor']['id']
         timestamp = pd.Timestamp.now()
         fixture = {
@@ -357,7 +357,7 @@ def fixture_stats(fixture_url):
             "League_id": league_id,
             "Game_id": id,
             "Game_Date": date,
-            "Local_id": local_id,
+            "Home_id": home_id,
             "Away_id": away_id,
             "Timestamp": timestamp
         }

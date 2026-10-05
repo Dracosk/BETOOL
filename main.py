@@ -25,7 +25,7 @@ def run_bot():
     if df_bets.empty:
         print("No bets to place today.")
         return
-    cols = ['game_date', 'local', 'away', 'market', 'bet_name', 'model_prob', 'odd', 'ev_pct', 'bank_pct']
+    cols = ['game_date', 'home', 'away', 'market', 'bet_name', 'model_prob', 'odd', 'ev', 'bank']
     df_bets = df_bets[[c for c in cols if c in df_bets.columns]]
 
     print('\nChosen events for betting:')

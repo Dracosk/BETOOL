@@ -11,7 +11,7 @@ leagues = {'Premier League':'https://webws.365scores.com/web/games/fixtures/?app
            'Ligue 1':'https://webws.365scores.com/web/games/fixtures/?appTypeId=5&langId=1&timezoneName=America/Santiago&userCountryId=28&competitions=35'}
           
 
-df_cols = ['Game_id', 'Local_id', 'Away_id']
+df_cols = ['Game_id', 'Home_id', 'Away_id']
 tp = pd.Timestamp.now().strftime('%Y-%m-%d_%H-%M-%S')
 for league_name,url in leagues.items():
     try:
