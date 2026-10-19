@@ -34,14 +34,16 @@ async def tab_init(tournament_url):
             await tab.scroll.by(ScrollPosition.UP, 300, humanize=True)
             await asyncio.sleep(1.0)
 
-        seasons = await clean_seasons(tab, league_id)
-        await asyncio.sleep(random.uniform(0.5, 0.7))
-        rounds = await get_rounds(tab, league_id, season_id)
-        await asyncio.sleep(random.uniform(0.5, 0.7))
-
-        #get_matches_data = await get_matches(tab, league_id, season_id, 6)
-        
-    return seasons, rounds, #get_matches_data
+        all_fixtures, all_results = await get_all_rounds_data(tab, league_id, season_id)
+        all_halves = []
+        for results in all_results:
+            match_id = results.get('match_id')
+            stats_all, stats_halves = await clean_stats(tab, match_id)
+            results.update(stats_all)
+            if stats_halves:
+                all_halves.append(stats_halves)
+            await asyncio.sleep(random.uniform(1.0, 2.5))
+    return all_fixtures, all_results, all_halves
 
 
 async def get_rounds(tab, league_id, season_id):
@@ -119,7 +121,7 @@ async def get_all_rounds_data(tab, league_id, season_id):
         fixture_matches, results_matches = await clean_matches(tab, league_id, season_id, round_id)
         all_fixtures.extend(fixture_matches)
         all_results.extend(results_matches)
-        await asyncio.sleep(random.uniform(0.5, 0.7))
+        await asyncio.sleep(random.uniform(0.7, 0.9))
     
     return all_fixtures, all_results
 
@@ -163,4 +165,56 @@ async def clean_stats(tab, match_id):
                 else:
                     continue
     return stats_all, stats_halves
+
+async def tab_seasons(tournament_url):
+    patron = r'/tournament/([^/]+)/([^/]+)/(\d+)#id:(\d+)'
+    match = re.search(patron, tournament_url)
+    
+    if not match:
+        return None
+        
+    country = match.group(1)
+    league = match.group(2)       
+    league_id = match.group(3)  
+    season_id = match.group(4)
+
+    options = ChromiumOptions()
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    
+    async with Chrome(options=options) as browser:
+        tab = await browser.start()
+        url_base = tournament_url
+        await tab.go_to(url_base)
+        
+        for pause in range(3):
+            await tab.scroll.by(ScrollPosition.DOWN, 600, humanize=True)
+            timesleep = random.uniform(3.5, 7.5)
+            await asyncio.sleep(timesleep)
+            await tab.scroll.by(ScrollPosition.UP, 300, humanize=True)
+            await asyncio.sleep(1.0)
+        
+        all_halves = []
+        master_results = []
+        master_fixtures = []
+
+        cleaned_seasons = await clean_seasons(tab, league_id)
+        for season in cleaned_seasons[:6]:
+            season_id = season.get('season_id')
+            season_name = season.get('season_name')
+            all_fixtures, all_results = await get_all_rounds_data(tab, league_id, season_id)
+            for fixture in all_fixtures:
+                fixture.update({'season_name': season_name})
+            master_fixtures.extend(all_fixtures)
+            for results in all_results:
+                match_id = results.get('match_id')
+                stats_all, stats_halves = await clean_stats(tab, match_id)
+                results.update({'season_name': season_name})
+                results.update(stats_all)
+                if stats_halves:
+                    stats_halves.update({'season_name': season_name})
+                    all_halves.append(stats_halves)
+                await asyncio.sleep(random.uniform(1.0, 2.5))
+            master_results.extend(all_results)
+            await asyncio.sleep(random.uniform(2.0,2.7))
+    return master_fixtures, master_results, all_halves
 
