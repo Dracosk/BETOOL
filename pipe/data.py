@@ -7,7 +7,13 @@ from pydoll.browser.options import ChromiumOptions
 import random
 import re
 
+MAX_CONCURRENT_REQUESTS = 4
+semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+CONSECUTIVE_REQUEST_DELAY = 1.0 
+CONSECUTIVE_ERRORS = 0
+
 async def tab_init(tournament_url):
+    global CONSECUTIVE_ERRORS
     patron = r'/tournament/([^/]+)/([^/]+)/(\d+)#id:(\d+)'
     match = re.search(patron, tournament_url)
     
@@ -26,7 +32,8 @@ async def tab_init(tournament_url):
         tab = await browser.start()
         url_base = tournament_url
         await tab.go_to(url_base)
-        
+
+        await asyncio.sleep(random.uniform(2.0, 4.0))        
         for pause in range(3):
             await tab.scroll.by(ScrollPosition.DOWN, 600, humanize=True)
             timesleep = random.uniform(3.5, 7.5)
@@ -36,13 +43,14 @@ async def tab_init(tournament_url):
 
         all_fixtures, all_results = await get_all_rounds_data(tab, league_id, season_id)
         all_halves = []
-        for results in all_results:
-            match_id = results.get('match_id')
-            stats_all, stats_halves = await clean_stats(tab, match_id)
-            results.update(stats_all)
-            if stats_halves:
-                all_halves.append(stats_halves)
-            await asyncio.sleep(random.uniform(1.0, 2.5))
+        tasks = [match_task(tab, result_dict) for result_dict in all_results]
+        completed_tasks = await asyncio.gather(*tasks)
+        final_results = []
+        for final_result, halves_data in completed_tasks:
+            final_results.append(final_result)
+            if halves_data:
+                all_halves.append(halves_data)
+            CONSECUTIVE_ERRORS = 0
     return all_fixtures, all_results, all_halves
 
 
@@ -113,35 +121,46 @@ async def clean_matches(tab, league_id, season_id, round_id):
 
 async def get_all_rounds_data(tab, league_id, season_id):
     rounds = await get_rounds(tab, league_id, season_id)
+    if not rounds:
+        return [], []
     all_fixtures = []
     all_results = []
-    
-    for round_info in rounds:
-        round_id = round_info.get('round', '')
-        fixture_matches, results_matches = await clean_matches(tab, league_id, season_id, round_id)
-        all_fixtures.extend(fixture_matches)
-        all_results.extend(results_matches)
-        await asyncio.sleep(random.uniform(0.7, 0.9))
-    
+    CHUNK_SIZE = 5
+    for i in range(0, len(rounds), CHUNK_SIZE):
+        chunk = rounds[i:i + CHUNK_SIZE]
+        tasks = [clean_matches(tab, league_id, season_id, round_info.get('round', '')) for round_info in chunk]
+        rounds_data = await asyncio.gather(*tasks)
+        for fixture_matches, results_matches in rounds_data:
+            all_fixtures.extend(fixture_matches)
+            all_results.extend(results_matches)
+        await asyncio.sleep(random.uniform(2.0, 4.0))
     return all_fixtures, all_results
 
 async def get_stats(tab, match_id):
         api_url = f"https://www.sofascore.com/api/v1/event/{match_id}/statistics"
         response = await timed_request(tab, api_url)
         return response.get('statistics', [])
-
+ 
 async def timed_request(tab,api_url, retries=3, timeout= 10):
-    for attempt in range(retries):
-        try:
-            response = await asyncio.wait_for(tab.request.get(api_url), timeout=timeout)
-            return response.json()
-        except asyncio.TimeoutError:
-            if attempt < retries - 1:
-                await asyncio.sleep(random.uniform(1, 3)) 
-            else:
-                return {}
-        except Exception as e:
-            return {}
+    global CONSECUTIVE_ERRORS
+    if CONSECUTIVE_ERRORS > 10:
+        await asyncio.sleep(60)
+        CONSECUTIVE_ERRORS = 0
+    async with semaphore:
+        jitter = random.uniform(0.1, 0.5)
+        await asyncio.sleep(CONSECUTIVE_REQUEST_DELAY + jitter)
+        for attempt in range(retries):
+            try:
+                response = await asyncio.wait_for(tab.request.get(api_url), timeout=timeout)
+                CONSECUTIVE_ERRORS = 0
+                return response.json()
+            except Exception as e:
+                error_name = type(e).__name__
+                endpoint = api_url.split('/')[-2:]
+                print(f"Error {error_name} in {'/'.join(endpoint)} occurred while fetching {api_url}: {e}")
+                CONSECUTIVE_ERRORS += 1
+                asyncio.sleep(2 ** attempt + random.uniform(0, 1))
+        return {}         
 
 async def clean_stats(tab, match_id):
     stats = await get_stats(tab, match_id)
@@ -167,6 +186,7 @@ async def clean_stats(tab, match_id):
     return stats_all, stats_halves
 
 async def tab_seasons(tournament_url):
+    global CONSECUTIVE_ERRORS
     patron = r'/tournament/([^/]+)/([^/]+)/(\d+)#id:(\d+)'
     match = re.search(patron, tournament_url)
     
@@ -185,6 +205,8 @@ async def tab_seasons(tournament_url):
         tab = await browser.start()
         url_base = tournament_url
         await tab.go_to(url_base)
+
+        await asyncio.sleep(random.uniform(2.0, 4.0))
         
         for pause in range(3):
             await tab.scroll.by(ScrollPosition.DOWN, 600, humanize=True)
@@ -205,16 +227,35 @@ async def tab_seasons(tournament_url):
             for fixture in all_fixtures:
                 fixture.update({'season_name': season_name})
             master_fixtures.extend(all_fixtures)
-            for results in all_results:
-                match_id = results.get('match_id')
-                stats_all, stats_halves = await clean_stats(tab, match_id)
-                results.update({'season_name': season_name})
-                results.update(stats_all)
-                if stats_halves:
-                    stats_halves.update({'season_name': season_name})
-                    all_halves.append(stats_halves)
-                await asyncio.sleep(random.uniform(1.0, 2.5))
-            master_results.extend(all_results)
-            await asyncio.sleep(random.uniform(2.0,2.7))
+            CHUNK_SIZE = 10
+            for i in range(0, len(all_results), CHUNK_SIZE):
+                chunk = all_results[i:i + CHUNK_SIZE]
+                tasks = [match_task(tab, result_dict, season_name) for result_dict in chunk]
+                completed_tasks = await asyncio.gather(*tasks)
+                for final_result, halves_data in completed_tasks:
+                    master_results.append(final_result)
+                    if halves_data:
+                        all_halves.append(halves_data)
+                await asyncio.sleep(random.uniform(2.0, 4.0))
+            print(f"Completed season: {season_name} with {len(all_results)} matches.")
+            await asyncio.sleep(random.uniform(3.0, 4.5))
+            CONSECUTIVE_ERRORS = 0
     return master_fixtures, master_results, all_halves
+
+async def match_task(tab, result_dict, season_name=None):
+    match_id = result_dict.get('match_id')
+    stats_all, stats_halves = await clean_stats(tab, match_id)
+    result_dict.update(stats_all)
+    if season_name:
+        result_dict.update({'season_name': season_name})
+
+    halves_data = None
+    if stats_halves:
+        if season_name:
+            stats_halves.update({'season_name': season_name})
+        halves_data = stats_halves
+    return result_dict, halves_data
+
+
+
 
