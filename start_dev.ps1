@@ -33,6 +33,7 @@ if (Test-Path ".\.env") {
     Write-Host "Aviso: no hay .env; se usara ~/.aws/credentials" -ForegroundColor Yellow
 }
 
-Write-Host "Iniciando backend en http://localhost:8000  y frontend en http://localhost:3010" -ForegroundColor Green
-Start-Process powershell -NoExit -WorkingDirectory $root -ArgumentList "-Command", ".\venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --port 8000"
-Start-Process powershell -NoExit -WorkingDirectory "$root\frontend" -ArgumentList "-Command", "npm run dev -- --port 3010"
+Write-Host "Iniciando backend en http://127.0.0.1:8000  y frontend en http://127.0.0.1:3010" -ForegroundColor Green
+Write-Host "Ambos escuchan solo en loopback (no accesibles desde la red local)." -ForegroundColor DarkGray
+Start-Process powershell -NoExit -WorkingDirectory $root -ArgumentList "-Command", ".\venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000"
+Start-Process powershell -NoExit -WorkingDirectory "$root\frontend" -ArgumentList "-Command", "npm run dev -- --hostname 127.0.0.1 --port 3010"

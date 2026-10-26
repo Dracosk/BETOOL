@@ -11,18 +11,16 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    # El frontend de BETOOL corre en el 3010 (el 3000 lo usa otro proyecto).
-    # El regex permite cualquier puerto local para no volver a romperse si cambia.
+    # El frontend de BETOOL corre en el 3010 y solo en loopback.
+    # Lista cerrada a proposito: no se permite cualquier puerto local para que
+    # otra pagina servida en localhost no pueda llamar a esta API con cookies.
     allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
         "http://localhost:3010",
         "http://127.0.0.1:3010",
     ],
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(bets.router, prefix="/api")
