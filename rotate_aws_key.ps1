@@ -43,6 +43,15 @@ if ([string]::IsNullOrWhiteSpace($secret) -or $secret.Length -lt 20) {
 
 # --- backup de lo actual (por si hay que volver atras) ---
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+# Los ficheros viven con ACL cerrada: nos devolvemos escritura antes de tocarlos.
+foreach ($f in @($envFile, $awsCred, $awsConfig)) {
+    if (Test-Path $f) {
+        icacls $f /inheritance:r /grant:r "$($env:USERNAME):(M)" | Out-Null
+        Set-ItemProperty -Path $f -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+    }
+}
+
 if (Test-Path $envFile) { Copy-Item $envFile "$envFile.bak-$stamp" -Force }
 if (Test-Path $awsCred) { Copy-Item $awsCred "$awsCred.bak-$stamp" -Force }
 
@@ -75,12 +84,12 @@ $lines += "AWS_ACCESS_KEY_ID=$AccessKeyId"
 $lines += "AWS_SECRET_ACCESS_KEY=$secret"
 $lines += "AWS_DEFAULT_REGION=$region"
 $lines += "AWS_REGION=$region"
-$lines | Set-Content -Path $envFile -Encoding ascii
+$lines | Set-Content -Path $envFile -Encoding ascii -Force
 
-# --- permisos: solo tu usuario ---
+# --- permisos: solo tu usuario, con escritura para poder rotar de nuevo ---
 foreach ($f in @($envFile, $awsCred, $awsConfig)) {
     if (Test-Path $f) {
-        icacls $f /inheritance:r /grant:r "$($env:USERNAME):(R)" | Out-Null
+        icacls $f /inheritance:r /grant:r "$($env:USERNAME):(M)" | Out-Null
     }
 }
 

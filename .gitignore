@@ -23,4 +23,6 @@ env/
 .env
 # Copias de seguridad de credenciales hechas por rotate_aws_key.ps1
 .env.bak-*
+# Respaldos cifrados (.enc) nunca al repo
+*.enc
 .aws
