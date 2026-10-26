@@ -5,6 +5,7 @@
 data/
 models/
 *.json
+!skills-lock.json
 
 # Archivos Cache 
 __pycache__/
