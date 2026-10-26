@@ -1,5 +1,6 @@
 # Levanta el backend (FastAPI) y el frontend (Next.js) en modo desarrollo.
 # Requiere: venv con dependencias instaladas y node_modules en frontend/.
+# Puertos: backend 8000, frontend 3010 (el 3000 lo usa otro proyecto).
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
@@ -16,6 +17,22 @@ if (-not (Test-Path ".\frontend\node_modules")) {
     exit 1
 }
 
-Write-Host "Iniciando backend en http://localhost:8000  y frontend en http://localhost:3000" -ForegroundColor Green
+# Carga las credenciales AWS desde .env en este proceso (las heredan los hijos).
+if (Test-Path ".\.env") {
+    Get-Content ".\.env" | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $idx = $line.IndexOf("=")
+            $key = $line.Substring(0, $idx).Trim()
+            $value = $line.Substring($idx + 1).Trim()
+            [Environment]::SetEnvironmentVariable($key, $value, "Process")
+        }
+    }
+    Write-Host "Credenciales AWS cargadas desde .env" -ForegroundColor DarkGray
+} else {
+    Write-Host "Aviso: no hay .env; se usara ~/.aws/credentials" -ForegroundColor Yellow
+}
+
+Write-Host "Iniciando backend en http://localhost:8000  y frontend en http://localhost:3010" -ForegroundColor Green
 Start-Process powershell -NoExit -WorkingDirectory $root -ArgumentList "-Command", ".\venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --port 8000"
-Start-Process powershell -NoExit -WorkingDirectory "$root\frontend" -ArgumentList "-Command", "npm run dev"
+Start-Process powershell -NoExit -WorkingDirectory "$root\frontend" -ArgumentList "-Command", "npm run dev -- --port 3010"
