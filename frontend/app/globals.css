@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+:root {
+  --background: #060910;
+  --surface: #0b111c;
+  --surface-2: #111a2c;
+  --border: #1d2740;
+  --foreground: #e8eefb;
+  --muted: #8494b5;
+  --primary: #10b981;
+  --primary-2: #34d399;
+  --gold: #fbbf24;
+  --danger: #fb7185;
+  --info: #38bdf8;
+  --violet: #a78bfa;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-2: var(--primary-2);
+  --color-gold: var(--gold);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-violet: var(--violet);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background:
+    radial-gradient(1100px 700px at 12% -12%, rgba(16, 185, 129, 0.08), transparent 60%),
+    radial-gradient(900px 620px at 115% 0%, rgba(56, 189, 248, 0.055), transparent 55%),
+    radial-gradient(800px 500px at 50% 110%, rgba(139, 92, 246, 0.04), transparent 55%),
+    var(--background);
+  background-attachment: fixed;
+  color: var(--foreground);
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.35);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #26334f transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #26334f;
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #33415f;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Rejilla sutil de fondo para zonas de datos */
+.grid-overlay {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Animación sutil para entrada de tarjetas */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise-in {
+  animation: rise-in 0.35s ease-out both;
+}
