@@ -6,6 +6,10 @@ data/
 models/
 *.json
 !skills-lock.json
+# Configuracion del frontend (son ficheros de proyecto, no datos exportados)
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
 
 # Archivos Cache 
 __pycache__/
