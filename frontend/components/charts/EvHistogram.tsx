@@ -6,7 +6,6 @@ import {
   CartesianGrid,
   Cell,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -18,37 +17,56 @@ export function EvHistogram({ stats }: { stats: StatsResponse | null }) {
     return <EmptyState message="Sin datos de EV todavía." />;
   }
   const data = stats.ev_histogram;
+  const highlight = (label: string) => label.startsWith(">");
+
   return (
-    <Card>
-      <h3 className="mb-4 text-sm font-semibold text-slate-200">
-        Distribución de EV (apuestas)
-      </h3>
-      <div className="h-64">
+    <Card className="rise-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-100">Distribución de EV</h3>
+          <p className="text-xs text-muted">cantidad de apuestas por rango de EV</p>
+        </div>
+      </div>
+      <div className="mt-4 h-60">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} interval={1} />
-            <YAxis allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-            <Tooltip
-              cursor={{ fill: "rgba(148,163,184,0.08)" }}
-              contentStyle={{
-                background: "#0f172a",
-                border: "1px solid #334155",
-                borderRadius: 10,
-                fontSize: 12,
-              }}
+          <BarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1d2740" vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fill: "#8494b5", fontSize: 10 }}
+              interval={1}
+              axisLine={{ stroke: "#1d2740" }}
+              tickLine={false}
             />
-            <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-              {data.map((entry) => (
+            <YAxis
+              allowDecimals={false}
+              tick={{ fill: "#8494b5", fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Bar
+              dataKey="count"
+              name="Apuestas"
+              radius={[5, 5, 0, 0]}
+              maxBarSize={34}
+            >
+              {data.map((entry, i) => (
                 <Cell
-                  key={entry.label}
-                  fill={entry.label.startsWith(">") ? "#22c55e" : "#38bdf8"}
+                  key={i}
+                  fill={highlight(entry.label) ? "#34d399" : "#38bdf8"}
+                  fillOpacity={highlight(entry.label) ? 1 : 0.55}
                 />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
+      <p className="mt-2 text-[11px] text-muted">
+        <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#38bdf8] align-middle" /> EV
+        moderado &nbsp;·&nbsp;
+        <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#34d399] align-middle" /> EV alto
+        (≥ 10%)
+      </p>
     </Card>
   );
 }

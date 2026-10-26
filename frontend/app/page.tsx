@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { RefreshCw, ServerCrash, Target } from "lucide-react";
 import {
   api,
   errorMessage,
@@ -11,26 +12,19 @@ import {
   type Scope,
   type StatsResponse,
 } from "@/lib/api";
-import { cn } from "@/lib/cn";
+import type { Section } from "@/components/ui";
+import { Card, EmptyState, ErrorBanner, LoaderPane, StatusPill } from "@/components/ui";
+import { Sidebar, MobileNav } from "@/components/Sidebar";
+import { Header } from "@/components/Header";
 import { KpiCards } from "@/components/KpiCards";
 import { FilterBar } from "@/components/FilterBar";
 import { BetsTable } from "@/components/BetsTable";
 import { ChartsSection } from "@/components/ChartsSection";
 import { BankrollPanel } from "@/components/BankrollPanel";
 import { PipelinePanel } from "@/components/PipelinePanel";
-import { Badge, EmptyState } from "@/components/ui";
-
-type Tab = "apuestas" | "graficas" | "bankroll" | "pipeline";
-
-const TABS: { key: Tab; label: string }[] = [
-  { key: "apuestas", label: "Apuestas" },
-  { key: "graficas", label: "Gráficas" },
-  { key: "bankroll", label: "Bankroll" },
-  { key: "pipeline", label: "Pipeline" },
-];
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("apuestas");
+  const [active, setActive] = useState<Section>("apuestas");
   const [scope, setScope] = useState<Scope>("all");
   const [market, setMarket] = useState("");
 
@@ -156,93 +150,114 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-      {/* Cabecera */}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-slate-50">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500 text-lg font-black text-emerald-950">
-              B
-            </span>
-            BETOOL
-            <span className="text-sm font-medium text-emerald-400">+EV</span>
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Motor XGBoost de apuestas de valor · {betsData?.total ?? 0} candidatas disponibles
+    <div className="min-h-screen">
+      <Sidebar active={active} onSelect={setActive}>
+        <div className="flex flex-col gap-2">
+          <StatusPill
+            label={apiUp === null ? "Conectando API…" : apiUp ? "API conectada" : "API sin conexión"}
+            tone={apiUp === null ? "unknown" : apiUp ? "online" : "offline"}
+          />
+          <p className="text-[11px] leading-relaxed text-muted/70">
+            Backend FastAPI local · puerto 8000
           </p>
         </div>
-        <Badge
-          className={
-            apiUp === null
-              ? "border-slate-700 bg-slate-800 text-slate-300"
-              : apiUp
-                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                : "border-red-500/50 bg-red-500/10 text-red-300"
-          }
-        >
-          <span
-            className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              apiUp === null ? "bg-slate-400" : apiUp ? "bg-emerald-400" : "bg-red-400",
-            )}
-          />
-          {apiUp === null ? "Conectando API…" : apiUp ? "API conectada" : "API sin conexión"}
-        </Badge>
-      </header>
+      </Sidebar>
 
-      {error ? (
-        <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          ⚠ {error}
-        </div>
-      ) : null}
+      <div className="md:pl-64">
+        <MobileNav active={active} onSelect={setActive} />
 
-      {/* Navegación */}
-      <nav className="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/70 p-1.5">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-colors sm:flex-none sm:px-6",
-              tab === t.key
-                ? "bg-emerald-500 text-emerald-950 shadow"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+        <Header
+          active={active}
+          apiUp={apiUp}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+          runningJob={runningName}
+          showRefresh={active !== "apuestas"}
+        />
 
-      {/* Contenido */}
-      {tab === "apuestas" && (
-        <div className="flex flex-col gap-4">
-          <FilterBar
-            scope={scope}
-            setScope={setScope}
-            market={market}
-            setMarket={setMarket}
-            bets={betsData?.bets ?? []}
-            onRefresh={handleRefresh}
-            refreshing={refreshing}
-            updatedAt={betsData?.updated_at ?? null}
-          />
-          <KpiCards bets={betsData?.bets ?? []} />
-          {!betsData?.cached ? (
-            <EmptyState message="Aún no hay predicciones. Pulsa «Actualizar predicciones» para generar el listado de apuestas +EV (puede tardar un par de minutos, descarga modelos y consulta Athena)." />
-          ) : (
-            <BetsTable bets={betsData?.bets ?? []} />
+        <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8">
+          {error ? (
+            <div className="mb-6">
+              <ErrorBanner message={error} onClose={() => setError(null)} />
+            </div>
+          ) : null}
+
+          {active === "apuestas" && (
+            <div className="flex flex-col gap-4">
+              {apiUp === false ? (
+                <Card className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+                  <span className="grid h-14 w-14 place-items-center rounded-2xl border border-red-400/30 bg-red-400/10 text-red-300">
+                    <ServerCrash className="h-6 w-6" />
+                  </span>
+                  <p className="text-sm font-semibold text-slate-200">API sin conexión</p>
+                  <p className="max-w-md text-sm text-muted">
+                    No se puede contactar con el backend en el puerto 8000. Arranca
+                    {` `}
+                    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-emerald-300">
+                      start_dev.ps1
+                    </code>
+                    {` `}
+                    y recarga la página.
+                  </p>
+                </Card>
+              ) : betsData === null ? (
+                <LoaderPane />
+              ) : (
+                <>
+                  <FilterBar
+                    scope={scope}
+                    setScope={setScope}
+                    market={market}
+                    setMarket={setMarket}
+                    bets={betsData.bets}
+                    onRefresh={handleRefresh}
+                    refreshing={refreshing}
+                    updatedAt={betsData.updated_at}
+                  />
+                  <KpiCards bets={betsData.bets} />
+                  {!betsData.cached ? (
+                    <EmptyState
+                      title="Sin predicciones todavía"
+                      message="Genera el listado de apuestas de valor +EV. El proceso descarga los modelos y consulta Athena: puede tardar un par de minutos en dar el primer resultado."
+                      icon={<Target className="h-6 w-6" />}
+                      action={
+                        <button
+                          onClick={handleRefresh}
+                          disabled={refreshing}
+                          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 shadow-[0_8px_20px_-8px_rgba(16,185,129,0.8)] transition-all hover:from-emerald-300 hover:to-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          {refreshing ? "Calculando…" : "Generar predicciones"}
+                        </button>
+                      }
+                    />
+                  ) : betsData.bets.length === 0 ? (
+                    <EmptyState
+                      title="Sin resultados para estos filtros"
+                      message="No hay apuestas que coincidan con el alcance y mercado seleccionados. Prueba con «Todas» o con otro mercado."
+                    />
+                  ) : (
+                    <BetsTable bets={betsData.bets} />
+                  )}
+                </>
+              )}
+            </div>
           )}
-        </div>
-      )}
 
-      {tab === "graficas" && <ChartsSection stats={stats} />}
+          {active === "graficas" && (
+            <div className="flex flex-col gap-4">
+              {betsData && betsData.bets.length > 0 ? <KpiCards bets={betsData.bets} /> : null}
+              <ChartsSection stats={stats} />
+            </div>
+          )}
 
-      {tab === "bankroll" && (
-        <BankrollPanel bankroll={bankroll} onSettle={handleSettle} settling={settling} />
-      )}
+          {active === "bankroll" && (
+            <BankrollPanel bankroll={bankroll} onSettle={handleSettle} settling={settling} />
+          )}
 
-      {tab === "pipeline" && <PipelinePanel logs={logs} onStart={handleStartPipeline} />}
-    </main>
+          {active === "pipeline" && <PipelinePanel logs={logs} onStart={handleStartPipeline} />}
+        </main>
+      </div>
+    </div>
   );
 }

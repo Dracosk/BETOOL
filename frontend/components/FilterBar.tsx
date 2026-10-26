@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
+import { Filter, RefreshCw } from "lucide-react";
 import type { Bet, Scope } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { Spinner } from "@/components/ui";
+import { dateOnly } from "@/lib/format";
 
 type Props = {
   scope: Scope;
@@ -14,12 +16,13 @@ type Props = {
   onRefresh: () => void;
   refreshing: boolean;
   updatedAt: number | null;
+  disabled?: boolean;
 };
 
-const SCOPES: { key: Scope; label: string }[] = [
-  { key: "all", label: "Todas" },
-  { key: "3d", label: "Próximos 3 días" },
-  { key: "today", label: "Hoy" },
+const SCOPES: { key: Scope; label: string; hint: string }[] = [
+  { key: "all", label: "Todas", hint: "todas las candidatas" },
+  { key: "3d", label: "Próximos 3 días", hint: "hoy + 3 días" },
+  { key: "today", label: "Hoy", hint: "solo hoy" },
 ];
 
 export function FilterBar({
@@ -31,25 +34,29 @@ export function FilterBar({
   onRefresh,
   refreshing,
   updatedAt,
+  disabled = false,
 }: Props) {
   const availableMarkets = useMemo(
     () => Array.from(new Set((bets ?? []).map((b) => b.market ?? "otros"))).sort(),
     [bets],
   );
 
+  const current = SCOPES.find((s) => s.key === scope);
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg border border-slate-800 bg-slate-900 p-1">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-surface p-1">
           {SCOPES.map((s) => (
             <button
               key={s.key}
               onClick={() => setScope(s.key)}
+              title={s.hint}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                "rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-all",
                 scope === s.key
-                  ? "bg-emerald-500 text-emerald-950"
-                  : "text-slate-300 hover:text-white",
+                  ? "bg-gradient-to-b from-emerald-400 to-emerald-500 text-emerald-950 shadow-[0_4px_14px_-4px_rgba(16,185,129,0.7)]"
+                  : "text-muted hover:text-slate-100",
               )}
             >
               {s.label}
@@ -57,34 +64,43 @@ export function FilterBar({
           ))}
         </div>
 
-        <select
-          value={market}
-          onChange={(e) => setMarket(e.target.value)}
-          className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none focus:border-emerald-500"
-        >
-          <option value="">Todos los mercados</option>
-          {availableMarkets.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+        <label className="relative inline-flex items-center">
+          <Filter className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-muted" />
+          <select
+            value={market}
+            onChange={(e) => setMarket(e.target.value)}
+            className="cursor-pointer appearance-none rounded-xl border border-border bg-surface py-2 pl-9 pr-8 text-sm font-medium text-slate-200 outline-none transition-colors focus:border-emerald-400/50"
+          >
+            <option value="">Todos los mercados</option>
+            {availableMarkets.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <span className="pointer-events-none absolute right-3 text-xs text-muted">▾</span>
+        </label>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 text-xs text-muted">
         {updatedAt ? (
-          <span className="text-xs text-slate-500">
-            Actualizado: {new Date(updatedAt * 1000).toLocaleString("es-ES")}
+          <span className="hidden sm:inline">
+            Última actualización · {dateOnly(new Date(updatedAt * 1000).toISOString())} —
+            {new Date(updatedAt * 1000).toLocaleTimeString("es-ES", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
           </span>
         ) : null}
         <button
           onClick={onRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={refreshing || disabled}
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-slate-200 transition-all hover:border-emerald-400/40 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {refreshing ? <Spinner className="!h-3.5 !w-3.5" /> : <span>⟳</span>}
-          {refreshing ? "Actualizando…" : "Actualizar predicciones"}
+          {refreshing ? <Spinner className="!h-3.5 !w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          {refreshing ? "Calculando…" : "Recalcular predicciones"}
         </button>
+        <span className="hidden capitalize lg:inline">{current?.hint}</span>
       </div>
     </div>
   );
