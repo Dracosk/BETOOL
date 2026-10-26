@@ -21,4 +21,6 @@ __pycache__/
 venv/
 env/
 .env
+# Copias de seguridad de credenciales hechas por rotate_aws_key.ps1
+.env.bak-*
 .aws
