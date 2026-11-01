@@ -23,7 +23,7 @@ from functools import partial
 from pydoll.protocol.fetch.events import FetchEvent
 from pydoll.protocol.network.types import ResourceType
 
-MAX_CONCURRENT_REQUESTS = 4
+MAX_CONCURRENT_REQUESTS = 8
 REQUEST_PER_SECOND = 3.0
 CONSECUTIVE_ERRORS = 0
 CACHE_DIR = Path("cache")
@@ -32,6 +32,8 @@ API = 'https://www.sofascore.com/api/v1'
 
 @dataclass(frozen=True)
 class ScrapingConfig:
+    """Configuration for scraping operations, including rate limiting, caching, and concurrency settings."""
+    
     max_concurrent_requests: int = MAX_CONCURRENT_REQUESTS
     request_per_second: float = REQUEST_PER_SECOND
     cache_dir: Path = CACHE_DIR
@@ -51,6 +53,7 @@ class ScrapingConfig:
             raise ValueError("checkpoint_interval must be at least 1.")
         
 class rate_limiter:
+    """ A simple rate limiter that controls the rate of requests and concurrency."""
     
     def __init__(self, rate_per_second, concurrency):
         if not math.isfinite(rate_per_second) or rate_per_second <= 0 or concurrency < 1:
@@ -90,6 +93,8 @@ class rate_limiter:
                 self._condition.notify_all()
 
 class SeasonCache:
+    """A cache for storing match statistics and halves data."""
+    
     def __init__(self, config, league_id, season_id):
         self.config = config
         self.league_id, self.season_id = str(league_id), str(season_id)
@@ -160,7 +165,21 @@ class SeasonCache:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
+class APIrequestError(RuntimeError):
+    """Custom exception for API request errors, including the URL and status code."""
+    
+    def __init__(self, url, status=None,*, retryable=False,detail=""):
+        self.status = status
+        self.retryable = retryable
+        super().__init__(f"{detail or f'HTTP{status}'} in request to {url}")
+
+class BrowserError(RuntimeError):
+    pass
+
+
 class RequestState:
+    """Holds the state of requests, including configuration, rate limiting, and statistics."""
+    
     def __init__(self, config = None):
         self.config = config or ScrapingConfig()
         self.limiter = rate_limiter(self.config.request_per_second, self.config.max_concurrent_requests)
@@ -177,25 +196,98 @@ def request_state():
 
 @asynccontextmanager
 async def open_tab(tournament_url, warmup = 2.0):
+        """Context manager to open a Chromium tab for scraping, with optional warmup time."""
+    
         options = ChromiumOptions()
         options.add_argument("--disable-blink-features=AutomationControlled")
+
         async with Chrome(options=options) as browser:
             tab = await browser.start()
             url_base = tournament_url
-            await tab.enable_fetch_events()
-            await tab.on(FetchEvent.REQUEST_PAUSED, partial(requests_filter, tab))
             await tab.go_to(url_base)
             await asyncio.sleep(warmup)
             yield tab # I use yield to avoid closing the tab when the context manager exits, allowing the caller to continue using it.
 
+async def browser_fetch(tab, url, timeout=10):
+    """Fetches a URL using the provided tab, with a timeout and error handling."""
+    
+    script = """
+    (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), TIMEOUT);
+        try {
+            const response = await fetch(URL_VALUE, {
+                signal: controller.signal,
+                credentials: "same-origin",
+                redirect: "error"
+            });
+            
+            const status = response.status;
+            const retryAfter = response.headers.get("retry-after");
+
+            if (!response.ok) {
+                controller.abort();
+                return {status, retry_after: retryAfter};
+            }
+            const text = await response.text();
+            return {status, retry_after: retryAfter, text};
+        } catch (error) {
+            return{
+            transport_error: String(error),
+            timed_out: controller.signal.aborted,
+            };
+        } finally {
+            clearTimeout(timer);
+        }    
+    })() 
+    """
+    script = script.replace("TIMEOUT", str(int(timeout * 1000)))
+    script = script.replace("URL_VALUE", json.dumps(url))
+
+    operation = asyncio.create_task(
+        tab.execute_script(script, await_promise=True, return_by_value=True)
+    )
+
+    try:
+        response = await asyncio.shield(operation)
+    except asyncio.CancelledError:
+        await asyncio.gather(operation, return_exceptions=True)
+        raise
+    except Exception as exc:
+        raise BrowserError(f"Error executing script for URL {url}: {exc}") from exc
+
+    envelope = response.get("result", {})
+    value = envelope.get("result", {}).get("value")
+
+    if "exceptionDetails" in envelope or not isinstance(value, dict):
+        raise BrowserError(f"Unexpected script result for URL {url}: {envelope}")
+    return value
+
 def retry_after_seconds(headers):
+    """Extracts the 'Retry-After' value from HTTP headers and returns it as a float in seconds."""
+    
     pairs = headers.items() if isinstance(headers, dict) else (
         (entry.get("name", ""), entry.get("value", "")) for entry in (headers or [])
     )
     value = next((value for name, value in pairs if name.lower() == "retry-after"), None)
-    return max(0.0, float(value)) if value is not None else None
-
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except (ValueError, TypeError):
+        try:
+            date = parsedate_to_datetime(value)
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
+            seconds = (date - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    
+    return max(0.0, seconds) if math.isfinite(seconds) else None
+    
 def parse_url(tournament_url, require_season=False):
+    """Parses a Sofascore tournament URL to extract the league ID and optional season ID."""
+    
     split = urlsplit(tournament_url)
     match = re.search(r'/tournament/[^/]+/[^/]+/(\d+)/?$', split.path)
     if split.hostname not in ["www.sofascore.com", "sofascore.com"] or not match:
@@ -206,14 +298,19 @@ def parse_url(tournament_url, require_season=False):
     return match.group(1), season.group(1) if season else None
 
 def payload_list(payload, key):
+    """Extracts a list from a JSON payload for a given key, raising an error if the key is missing or not a list."""
+    
     if key not in payload or not isinstance(payload[key], list):
         raise ValueError(f"Expected a list for key '{key}' in payload, but got: {payload.get(key)}")
     return payload[key]
 
 def unique_matches(matches):
+    """Returns a list of unique matches based on 'match_id', preserving the last occurrence of each match."""
     return list({match['match_id']: match for match in matches}.values())
 
 async def bounded_workers(fuction, items, concurrency=None):
+    """Runs a function concurrently on a list of items with a limit on the number of concurrent tasks."""
+    
     items = list(items)
     if not items:
         return []
@@ -238,8 +335,11 @@ async def bounded_workers(fuction, items, concurrency=None):
     return results
 
 async def scrape_season(tab, league_id, season_id, season_name=None,*,include_stats=True):
+    """Scrapes all fixtures and results for a given season, optionally including statistics."""
+    
     state = request_state()
     fixtures, results = await get_all_rounds_data(tab, league_id, season_id)
+
     for row in fixtures + results:
         row['season_id'] = season_id
         if season_name is not None:
@@ -248,7 +348,6 @@ async def scrape_season(tab, league_id, season_id, season_name=None,*,include_st
         return fixtures, [{**row, 'stat_status': 'skipped', 'stat_source': None, 'stats_error': None} for row in results], []
     
     cache = SeasonCache(state.config, league_id, season_id)
-    hits_before = state.cache_hits
 
     async def enrich(row):
         cached = cache.get(row['match_id'])
@@ -258,12 +357,14 @@ async def scrape_season(tab, league_id, season_id, season_name=None,*,include_st
         cache.invalidate(row['match_id'])
         try:
            all_stats, halves = await clean_stats(tab, row['match_id'])
-        except Exception as e:
-            logging.error(f"Error fetching stats for match {row['match_id']}: {e}")
-            return {**row, 'stat_status': 'failed', 'stat_source': None, 'stats_error': str(e)}
+        except APIrequestError as exc:
+            if (not state.config.allow_partial or not exc.retryable or exc.status == 429):
+                raise
+            logging.warning(f"Skipping stats for match {row['match_id']} due to API error: {exc}")
+            return {**row, 'stat_status': 'failed', 'stat_source': None, 'stats_error': str(exc)}, None
         cache.put(row['match_id'], all_stats, halves)
         return assamble_results(row, all_stats, halves, season_name)
-
+    
     try:
         completed = await bounded_workers(enrich, results)
     finally:
@@ -273,49 +374,67 @@ async def scrape_season(tab, league_id, season_id, season_name=None,*,include_st
     return fixtures, results, halves
 
 async def scrape_multi_seasons(tournament_url, league_id, season_id=None, limit=6,include_stats=True,warmup=2.0,config=None):
+    """Scrapes multiple seasons for a given tournament URL, optionally including statistics and limiting the number of seasons."""
+    
     if not math.isfinite(warmup) or warmup < 0:
         raise ValueError("Warmup must be a non-negative finite number.")
+
+    config = config or ScrapingConfig()
+    concurrency = config.max_concurrent_requests
+    if (isinstance(concurrency,bool) or not isinstance(concurrency, int) or concurrency < 1):
+        raise ValueError("max_concurrent_requests must be a positive integer or a finite number.")
+    
     state = RequestState(config)
     token = _request_state.set(state)
-    async with open_tab(tournament_url, warmup=warmup) as tab:
-        seasons = await clean_seasons(tab, league_id)[:limit] if season_id is None else [
-        {'season_id': season_id, 'season_name': None}]
-        master_fixtures, master_results, master_halves = [], [], []
-        for season in seasons:
-            current_id = season['season_id']
-            if not current_id:
-                raise ValueError(f"Season ID is missing for season: {season}")
-            fixtures, results, halves = await scrape_season(tab, league_id, current_id, season['season_name'], include_stats=include_stats)
-            master_fixtures.extend(fixtures)
-            master_results.extend(results)
-            master_halves.extend(halves)
-    return master_fixtures, master_results, master_halves
+    started = time.perf_counter()
 
+    try:
+        async with open_tab(tournament_url, warmup=warmup) as tab:
+            seasons = (await clean_seasons(tab, league_id))[:limit] if season_id is None else [
+            {'season_id': season_id, 'season_name': None}]
+            master_fixtures, master_results, master_halves = [], [], []
+            for season in seasons:
+                current_id = season['season_id']
+                if not current_id:
+                    raise ValueError(f"Season ID is missing for season: {season}")
+                fixtures, results, halves = await scrape_season(tab, league_id, current_id, season['season_name'], include_stats=include_stats)
+                master_fixtures.extend(fixtures)
+                master_results.extend(results)
+                master_halves.extend(halves)
+            return master_fixtures, master_results, master_halves
+    finally:
+        _request_state.reset(token)
+        logging.info("total %.2f s  | tries %s | API errors %s | cache %s",
+                     time.perf_counter() - started, state.requests, state.errors, state.cache_hits)
 
 
 async def tab_init(tournament_url,*, include_stats=True, warmup=2.0, config=None):
+    """Initializes a tab for scraping a tournament URL, extracting the league ID and optional season ID, and then scraping a single season."""
     league_id, season_id = parse_url(tournament_url, require_season=True)
-    
     return await scrape_multi_seasons(tournament_url, league_id, season_id=season_id, config=config, include_stats=include_stats, warmup=warmup)
      
 
 async def get_rounds(tab, league_id, season_id):
+    """Fetches the rounds for a given league and season, returning a list of round information."""
     api_url = f'{API}/unique-tournament/{league_id}/season/{season_id}/rounds'
     response = await timed_request(tab, api_url)
     return payload_list(response, 'rounds')
 
 
 async def get_season(tab, league_id):
-        api_url = f"{API}/unique-tournament/{league_id}/seasons"
-        response = await timed_request(tab, api_url)
-        return payload_list(response, 'seasons')
+    """Fetches the seasons for a given league, returning a list of season information."""
+    api_url = f"{API}/unique-tournament/{league_id}/seasons"
+    response = await timed_request(tab, api_url)
+    return payload_list(response, 'seasons')
 
 async def get_matches(tab, league_id, season_id, round_id):
+        """Fetches the matches for a given league, season, and round, returning a list of match information."""
         api_url = f"{API}/unique-tournament/{league_id}/season/{season_id}/events/round/{round_id}"
         response = await timed_request(tab, api_url)
         return payload_list(response, 'events')
 
 async def clean_seasons(tab, league_id):
+    """Cleans and structures the season data for a given league, returning a list of dictionaries with season information."""
     seasons = await get_season(tab, league_id)
     cleaned_seasons = []
     for season in seasons:
@@ -330,6 +449,7 @@ async def clean_seasons(tab, league_id):
     return cleaned_seasons
 
 async def clean_matches(tab, league_id, season_id, round_id):
+    """Cleans and structures the match data for a given league, season, and round, returning two lists: fixtures and results."""
     fixture, results = [], []
 
     for match in await get_matches(tab, league_id, season_id, round_id):
@@ -353,6 +473,8 @@ async def clean_matches(tab, league_id, season_id, round_id):
     return fixture, results
 
 async def get_all_rounds_data(tab, league_id, season_id):
+    """Fetches and cleans all rounds data for a given league and season, returning two lists: fixtures and results."""
+
     rounds = await get_rounds(tab, league_id, season_id)
     rounds_data = await bounded_workers(lambda round_info: clean_matches(tab, league_id, season_id, round_info['round']), rounds,)
     fixtures, results = [], []
@@ -366,11 +488,13 @@ async def get_all_rounds_data(tab, league_id, season_id):
 
 
 async def get_stats(tab, match_id):
-        api_url = f"{API}/event/{match_id}/statistics"
-        response = await timed_request(tab, api_url)
-        return payload_list(response, 'statistics')
+    """Fetches the statistics for a given match ID, returning a list of statistics."""
+    api_url = f"{API}/event/{match_id}/statistics"
+    response = await timed_request(tab, api_url)
+    return payload_list(response, 'statistics')
 
 def parse_stats(match_id, stats):
+    """Parses the statistics for a given match ID, returning two dictionaries: stats_all and stats_halves."""
     stats_all, stats_halves = {'match_id': match_id}, {'match_id': match_id}
     for stat in stats:
         period = (stat.get('period') or '').lower()
@@ -390,6 +514,8 @@ def parse_stats(match_id, stats):
     return stats_all, stats_halves
 
 def assamble_results(result, stats_all, stats_halves, season_name=None, *, source='network'):
+    """Assembles the final results dictionary by combining match results with statistics, and adding metadata."""
+
     avalaible = len(stats_all) > 1 or len(stats_halves) > 1
     final = {**result, **stats_all,
             'stat_status': 'ok' if avalaible else 'unavailable',
@@ -405,36 +531,50 @@ def assamble_results(result, stats_all, stats_halves, season_name=None, *, sourc
 
 
 async def timed_request(tab,api_url, retries=3, timeout= 10):
+    """Performs a timed request to the given API URL with retries and timeout handling, returning the JSON response."""
     if retries < 1 or not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("Retries must be at least 1 and timeout must be a positive finite number.")
+    
     state = request_state()
+
     for attempt in range(retries):
-            retry_delay = None
+            retry_delay = 2 ** attempt + random.uniform(0, 0.5)
             try:
                 async with state.limiter.slot():
                     state.requests += 1
-                    response = await asyncio.wait_for(tab.request.get(api_url), timeout=timeout)
-                    if not 200 <= response.status_code < 300:
-                        if response.status_code in (429, 503):
-                            retry_delay = retry_after_seconds(response.headers)
-                            state.limiter.penalize(max(retry_delay or 0, 2 ** attempt))
-                            print(f"Request failed with status {response.status_code} for URL: {api_url}. Retrying in {retry_delay:.2f} seconds.")
-                return response.json()
-            except (asyncio.TimeoutError, Exception) as e:
+                    response = await browser_fetch(tab, api_url, timeout=timeout)
+                    if "transport_error" in response:
+                        raise APIrequestError(api_url, detail=response["transport_error"], retryable=True)
+
+                    status = response['status']
+                    if not 200 <= status < 300:
+                        if status in (429,503):
+                            sv_delay = retry_after_seconds({"retry-after": response.get("retry_after")})
+                            retry_delay = max(retry_delay, sv_delay or 0)
+                            state.limiter.penalize(retry_delay) 
+                        raise APIrequestError(api_url, status=status, retryable=status in (408, 429) or 500 <= status < 600,)
+                    try:
+                        payload = json.loads(response['text'])
+                    except (json.JSONDecodeError, KeyError) as exc:
+                        raise APIrequestError(api_url, status=status, detail=f"Failed to parse JSON: {exc}")
+                    if not isinstance(payload, dict):
+                        raise APIrequestError(api_url, status=status, detail="Response is not a JSON object.")
+                    return payload
+            
+            except APIrequestError as exc:
                 state.errors += 1
-                if attempt < retries - 1:
-                    delay = max(retry_delay or 0, 2 ** attempt)
-                    print(f"Request failed (attempt {attempt + 1}/{retries}) for URL: {api_url}. Retrying in {delay:.2f} seconds. Error: {e}")
-                    await asyncio.sleep(delay)
-                else:
-                    print(f"Request failed after {retries} attempts for URL: {api_url}. Error: {e}")
-                    raise e
+                logging.warning(f"Request error for {api_url}: {exc}. Attempt {attempt + 1} of {retries}. Retrying in {retry_delay:.2f} seconds.")
+                if not exc.retryable or attempt == retries - 1:
+                    raise 
+            await asyncio.sleep(retry_delay)
+
 
 async def clean_stats(tab, match_id):
+    """Fetches and parses the statistics for a given match ID, returning two dictionaries: stats_all and stats_halves."""
     return parse_stats(match_id, await get_stats(tab, match_id))
 
 async def requests_filter(tab, event):
-
+    """Filters network requests, blocking certain resource types and URLs, and allowing others to continue."""
     request_id = event['params']['requestId']
     resource_type = event['params'].get('resourceType', '')
     url = event['params'].get('request', {}).get('url', '')
@@ -445,14 +585,17 @@ async def requests_filter(tab, event):
         await tab.continue_request(request_id)
 
 
-async def tab_seasons(tournament_url):
-    return None
+async def tab_seasons(tournament_url, limit=6,*,include_stats=True, warmup=2.0, config=None):
+    """Scrapes multiple seasons for a given tournament URL, extracting the league ID and then scraping all seasons up to the specified limit."""
+
+    league_id, _ = parse_url(tournament_url, require_season=False)
+    return await scrape_multi_seasons(tournament_url, league_id, limit=limit, include_stats=include_stats, warmup=warmup, config=config)
 
 async def match_task(tab, result_dict, season_name=None):
+   """Task to fetch and clean statistics for a single match, returning the assembled results."""
+
    stats_all, stats_halves = await clean_stats(tab, result_dict['match_id'])
    return assamble_results(result_dict, stats_all, stats_halves, season_name)
-
-
 
 
 
