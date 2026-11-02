@@ -372,11 +372,13 @@ async def scrape_season(tab, league_id, season_id, season_name=None,*,include_st
     halves = [half for _, half in completed if half is not None]
     return fixtures, results, halves
 
-async def scrape_multi_seasons(tournament_url, league_id, season_id=None, limit=6,include_stats=True,warmup=2.0,config=None):
+async def scrape_multi_seasons(tournament_url, league_id, season_id=None, limit=6,include_stats=True,warmup=2.0,config=None, latest_only=False):
     """Scrapes multiple seasons for a given tournament URL, optionally including statistics and limiting the number of seasons."""
     
     if not math.isfinite(warmup) or warmup < 0:
         raise ValueError("Warmup must be a non-negative finite number.")
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("Limit must be a positive integer.")
 
     config = config or ScrapingConfig()
     concurrency = config.max_concurrent_requests
@@ -389,9 +391,16 @@ async def scrape_multi_seasons(tournament_url, league_id, season_id=None, limit=
 
     try:
         async with open_tab(tournament_url, warmup=warmup) as tab:
-            seasons = (await clean_seasons(tab, league_id))[:limit] if season_id is None else [
-            {'season_id': season_id, 'season_name': None}]
+            if season_id is not None:
+                seasons = [{'season_id': season_id, 'season_name': None}]
+            else:
+                available_seasons = await clean_seasons(tab, league_id)
+                seasons = available_seasons[:1] if latest_only else available_seasons[:limit]
             master_fixtures, master_results, master_halves = [], [], []
+            
+            if not seasons:
+                raise ValueError(f"No seasons found for league ID {league_id}.")
+            
             for season in seasons:
                 current_id = season['season_id']
                 if not current_id:
@@ -409,8 +418,8 @@ async def scrape_multi_seasons(tournament_url, league_id, season_id=None, limit=
 
 async def tab_init(tournament_url,*, include_stats=True, warmup=2.0, config=None):
     """Initializes a tab for scraping a tournament URL, extracting the league ID and optional season ID, and then scraping a single season."""
-    league_id, season_id = parse_url(tournament_url, require_season=True)
-    return await scrape_multi_seasons(tournament_url, league_id, season_id=season_id, config=config, include_stats=include_stats, warmup=warmup)
+    league_id, season_id = parse_url(tournament_url, require_season=False)
+    return await scrape_multi_seasons(tournament_url, league_id, season_id=season_id, config=config, include_stats=include_stats, warmup=warmup, latest_only=True)
      
 
 async def get_rounds(tab, league_id, season_id):
