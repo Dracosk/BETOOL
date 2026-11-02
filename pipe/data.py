@@ -1,4 +1,3 @@
-import argparse
 import json
 import math
 import os
@@ -11,7 +10,6 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
-
 import pandas as pd
 import asyncio
 from pydoll.browser.chromium import Chrome
@@ -210,7 +208,7 @@ async def open_tab(tournament_url, warmup = 2.0):
 
 async def browser_fetch(tab, url, timeout=10):
     """Fetches a URL using the provided tab, with a timeout and error handling."""
-    
+
     script = """
     (async () => {
         const controller = new AbortController();
@@ -342,6 +340,7 @@ async def scrape_season(tab, league_id, season_id, season_name=None,*,include_st
 
     for row in fixtures + results:
         row['season_id'] = season_id
+        row['league_id'] = league_id
         if season_name is not None:
             row['season_name'] = season_name
     if not include_stats:
@@ -442,6 +441,7 @@ async def clean_seasons(tab, league_id):
         season_id = season.get('id', '')
         year = season.get('year', '')
         cleaned_seasons.append({
+            'league_id': league_id,
             'season_name': season_name,
             'season_id': season_id,
             'year': year
@@ -459,7 +459,9 @@ async def clean_matches(tab, league_id, season_id, round_id):
         schema = {
             'match_id': match['id'],
             'home_team':(match.get('homeTeam') or {}).get('name', ''),
+            'home_id':(match.get('homeTeam') or {}).get('id', ''),
             'away_team':(match.get('awayTeam') or {}).get('name', ''),
+            'away_id':(match.get('awayTeam') or {}).get('id', ''),
             'start_time': match.get('startTimestamp'),
         }
         if code == 100:
@@ -525,8 +527,9 @@ def assamble_results(result, stats_all, stats_halves, season_name=None, *, sourc
         if row is not None:
             if season_name is not None:
                 row['season_name'] = season_name
-            if 'season_id' in result:
-                row['season_id'] = result['season_id'] 
+            for field in ("league_id", "season_id"):
+                if field in result:
+                    row[field] = result[field]
     return final, halves
 
 
@@ -597,5 +600,24 @@ async def match_task(tab, result_dict, season_name=None):
    stats_all, stats_halves = await clean_stats(tab, result_dict['match_id'])
    return assamble_results(result_dict, stats_all, stats_halves, season_name)
 
-
+async def tab_teams(tab, * ,league_id, season_id):
+    """Fetches and returns a list of unique teams for a given league and season, ensuring data integrity and handling duplicates."""
+    
+    api_url = f"{API}/unique-tournament/{league_id}/season/{season_id}/statistics/info"
+    response = await timed_request(tab, api_url)
+    teams = payload_list(response, 'teams')
+    records = {}
+    
+    for team in teams:
+        team_id = team.get('id')
+        team_name = team.get('name')
+        
+        if team_id is None or not isinstance(team_name, str) or not team_name.strip():
+            raise ValueError(f"Invalid team data: {team} in league {league_id}, season {season_id}")
+        
+        if team_id in records and records[team_id] != team_name:
+            raise ValueError(f"Duplicate team ID {team_id} with conflicting names: '{records[team_id]}' and '{team_name}'")
+        
+        records[team_id] = team_name
+    return [{"team_id": team_id, "team_name": team_name} for team_id, team_name in records.items()]
 
