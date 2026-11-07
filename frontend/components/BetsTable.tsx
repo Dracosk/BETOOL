@@ -1,6 +1,7 @@
 "use client";
 
-import { CircleDot } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, CircleDot } from "lucide-react";
 import type { Bet } from "@/lib/api";
 import { Badge, Card } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -10,13 +11,88 @@ type Props = {
   bets: Bet[];
 };
 
+type SortKey = "ev" | "date";
+type SortDir = "asc" | "desc";
+
+function dateValue(bet: Bet): number {
+  const raw = String(bet.game_date ?? "").trim();
+  if (!raw) return Number.POSITIVE_INFINITY;
+  const iso = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = Date.parse(iso);
+  if (!Number.isNaN(parsed)) return parsed;
+  const fallback = Date.parse(`${raw.slice(0, 10)}T00:00:00`);
+  return Number.isNaN(fallback) ? Number.POSITIVE_INFINITY : fallback;
+}
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <Icon
+      aria-hidden="true"
+      className={cn(
+        "h-3 w-3 shrink-0 transition-colors",
+        active ? "text-emerald-300" : "text-muted/50 group-hover/sort:text-muted",
+      )}
+    />
+  );
+}
+
 export function BetsTable({ bets }: Props) {
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "ev", dir: "desc" });
+
+  function toggleSort(key: SortKey) {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "date" ? "asc" : "desc" },
+    );
+  }
+
+  const sortedBets = useMemo(() => {
+    const rows = [...bets];
+    rows.sort((a, b) => {
+      if (sort.key === "date") {
+        const da = dateValue(a);
+        const db = dateValue(b);
+        const aMissing = !Number.isFinite(da);
+        const bMissing = !Number.isFinite(db);
+        // Las apuestas sin fecha válida van siempre al final.
+        if (aMissing || bMissing) {
+          if (aMissing && bMissing) return (Number(b.ev) || 0) - (Number(a.ev) || 0);
+          return aMissing ? 1 : -1;
+        }
+        if (da !== db) return sort.dir === "asc" ? da - db : db - da;
+        return (Number(b.ev) || 0) - (Number(a.ev) || 0);
+      }
+      const ea = Number(a.ev) || 0;
+      const eb = Number(b.ev) || 0;
+      if (ea !== eb) return sort.dir === "asc" ? ea - eb : eb - ea;
+      const da = dateValue(a);
+      const db = dateValue(b);
+      if (!Number.isFinite(da) || !Number.isFinite(db)) {
+        return da === db ? 0 : Number.isFinite(da) ? -1 : 1;
+      }
+      return da - db;
+    });
+    return rows;
+  }, [bets, sort]);
+
+  const orderLabel =
+    sort.key === "date"
+      ? `ordenadas por fecha (${sort.dir === "asc" ? "más próximas primero" : "más lejanas primero"})`
+      : `ordenadas por EV (${sort.dir === "asc" ? "menor primero" : "mayor primero"})`;
+
+  const ariaSort = (key: SortKey) =>
+    sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
+
   return (
     <Card className="rise-in !p-0 overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-5 py-4">
         <div>
           <h3 className="text-sm font-semibold text-slate-100">Candidatas de valor</h3>
-          <p className="text-xs text-muted">{bets.length} apuestas · ordenadas por EV</p>
+          <p className="text-xs text-muted">
+            {bets.length} apuestas · {orderLabel}
+          </p>
         </div>
         <Badge className="border-emerald-400/30 bg-emerald-400/5 text-emerald-300">
           <CircleDot className="h-3 w-3" />
@@ -28,18 +104,44 @@ export function BetsTable({ bets }: Props) {
         <table className="w-full min-w-[860px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-widest text-muted">
-              <th className="px-5 py-3 font-medium">Fecha</th>
+              <th aria-sort={ariaSort("date")} className="px-5 py-3 font-medium">
+                <button
+                  type="button"
+                  onClick={() => toggleSort("date")}
+                  title="Ordenar por fecha"
+                  className={cn(
+                    "group/sort -mx-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60",
+                    sort.key === "date" && "text-slate-100",
+                  )}
+                >
+                  Fecha
+                  <SortIcon active={sort.key === "date"} dir={sort.dir} />
+                </button>
+              </th>
               <th className="px-4 py-3 font-medium">Partido</th>
               <th className="px-4 py-3 font-medium">Mercado</th>
               <th className="px-4 py-3 font-medium">Apuesta</th>
               <th className="px-4 py-3 font-medium">Probabilidad</th>
               <th className="px-4 py-3 text-right font-medium">Cuota</th>
-              <th className="px-4 py-3 text-right font-medium">EV</th>
+              <th aria-sort={ariaSort("ev")} className="px-4 py-3 text-right font-medium">
+                <button
+                  type="button"
+                  onClick={() => toggleSort("ev")}
+                  title="Ordenar por EV"
+                  className={cn(
+                    "group/sort -mx-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60",
+                    sort.key === "ev" && "text-slate-100",
+                  )}
+                >
+                  EV
+                  <SortIcon active={sort.key === "ev"} dir={sort.dir} />
+                </button>
+              </th>
               <th className="px-4 py-3 text-right font-medium">Bank %</th>
             </tr>
           </thead>
           <tbody>
-            {bets.map((bet, i) => {
+            {sortedBets.map((bet, i) => {
               const tier = evTier(bet.ev);
               const prob = Math.max(0, Math.min(100, (Number(bet.model_prob) || 0) * 100));
               return (
