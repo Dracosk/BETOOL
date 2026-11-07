@@ -48,10 +48,14 @@ def run_prediction() -> list:
     _ensure_repo_importable()
     from ml.predict import prediction_run
 
+    from backend.app.kickoff import attach_kickoff_times
+
     LOGS.write("[backend] Ejecutando prediction_run() (descarga modelos, consulta Athena)...")
     df = prediction_run()
     LOGS.write(f"[backend] predicción lista: {len(df)} apuestas de valor.")
-    return [normalize_row(r) for r in df.to_dict(orient="records")]
+    rows = [normalize_row(r) for r in df.to_dict(orient="records")]
+    LOGS.write("[backend] Añadiendo hora de inicio de los partidos...")
+    return attach_kickoff_times(rows)
 
 
 def run_module(module_name: str) -> dict:

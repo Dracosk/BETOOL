@@ -1,6 +1,8 @@
 export type Bet = {
   game_id?: string | null;
   game_date?: string | null;
+  start_time?: string | null;
+  kickoff?: string | null;
   home?: string | null;
   away?: string | null;
   market?: string | null;

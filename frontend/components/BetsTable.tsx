@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown, CircleDot } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, CircleDot, Clock } from "lucide-react";
 import type { Bet } from "@/lib/api";
 import { Badge, Card } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -15,13 +15,21 @@ type SortKey = "ev" | "date";
 type SortDir = "asc" | "desc";
 
 function dateValue(bet: Bet): number {
-  const raw = String(bet.game_date ?? "").trim();
+  const raw = String(bet.start_time ?? bet.game_date ?? "").trim();
   if (!raw) return Number.POSITIVE_INFINITY;
   const iso = raw.includes("T") ? raw : raw.replace(" ", "T");
   const parsed = Date.parse(iso);
   if (!Number.isNaN(parsed)) return parsed;
   const fallback = Date.parse(`${raw.slice(0, 10)}T00:00:00`);
   return Number.isNaN(fallback) ? Number.POSITIVE_INFINITY : fallback;
+}
+
+function kickoffLabel(bet: Bet): string | null {
+  const kickoff = String(bet.kickoff ?? "").trim();
+  if (/^\d{2}:\d{2}$/.test(kickoff)) return kickoff;
+  // Respaldo: extrae HH:MM del ISO si el backend no mandó el campo corto.
+  const match = String(bet.start_time ?? "").match(/T(\d{2}:\d{2})/);
+  return match ? match[1] : null;
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
@@ -91,7 +99,7 @@ export function BetsTable({ bets }: Props) {
         <div>
           <h3 className="text-sm font-semibold text-slate-100">Candidatas de valor</h3>
           <p className="text-xs text-muted">
-            {bets.length} apuestas · {orderLabel}
+            {bets.length} apuestas · {orderLabel} · hora de Chile
           </p>
         </div>
         <Badge className="border-emerald-400/30 bg-emerald-400/5 text-emerald-300">
@@ -108,7 +116,7 @@ export function BetsTable({ bets }: Props) {
                 <button
                   type="button"
                   onClick={() => toggleSort("date")}
-                  title="Ordenar por fecha"
+                  title="Ordenar por fecha y hora"
                   className={cn(
                     "group/sort -mx-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60",
                     sort.key === "date" && "text-slate-100",
@@ -144,6 +152,7 @@ export function BetsTable({ bets }: Props) {
             {sortedBets.map((bet, i) => {
               const tier = evTier(bet.ev);
               const prob = Math.max(0, Math.min(100, (Number(bet.model_prob) || 0) * 100));
+              const kickoff = kickoffLabel(bet);
               return (
                 <tr
                   key={`${bet.game_id ?? ""}-${i}`}
@@ -154,7 +163,19 @@ export function BetsTable({ bets }: Props) {
                 >
                   <td className="whitespace-nowrap px-5 py-3.5 text-slate-300">
                     <div className="text-[13px] font-medium">{dateOnly(bet.game_date)}</div>
-                    <div className="text-[11px] text-muted">partido</div>
+                    <div className="mt-0.5 text-[11px] text-muted">
+                      {kickoff ? (
+                        <span
+                          className="inline-flex items-center gap-1 tabular-nums"
+                          title={`Hora de Chile${bet.start_time ? ` · ${bet.start_time}` : ""}`}
+                        >
+                          <Clock className="h-3 w-3 text-slate-500" />
+                          {kickoff} h
+                        </span>
+                      ) : (
+                        <span className="text-muted/60">hora no disponible</span>
+                      )}
+                    </div>
                   </td>
 
                   <td className="px-4 py-3.5">
