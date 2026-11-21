@@ -20,8 +20,9 @@ import time
 from functools import partial
 from pydoll.protocol.fetch.events import FetchEvent
 from pydoll.protocol.network.types import ResourceType
+from pydoll.constants import PageLoadState
 
-MAX_CONCURRENT_REQUESTS = 8
+MAX_CONCURRENT_REQUESTS = 4
 REQUEST_PER_SECOND = 3.0
 CONSECUTIVE_ERRORS = 0
 CACHE_DIR = Path("cache")
@@ -197,6 +198,7 @@ async def open_tab(tournament_url, warmup = 2.0):
         """Context manager to open a Chromium tab for scraping, with optional warmup time."""
     
         options = ChromiumOptions()
+        options.page_load_state = PageLoadState.INTERACTIVE
         options.add_argument("--disable-blink-features=AutomationControlled")
 
         async with Chrome(options=options) as browser:

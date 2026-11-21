@@ -31,10 +31,10 @@ def betano_extract(url_name):
             loader.update(load)
             break 
         elif response.status_code == 404 and intento > 2:
-            print(f"Error 404 en intento {intento + 1} partido no encontrado")
+            print(f"Error 404 in the attempt {intento + 1} matching not found, skipping this match")
             break
         else:
-            print(f"Fallo en el codigo {response.status_code} en intento {intento + 1}. Reitentando..")
+            print(f"Error {response.status_code} in the attempt {intento + 1}, retrying.")
 
             
     return loader
@@ -49,8 +49,9 @@ def beturl_extract(purify_json):
     
     Returns:
         url_bets(list): Urls from each matches containing all possible bets """
+    
     events = purify_json['data']['blocks'][0]['events']
-    url_bets =[]
+    url_bets = []
     for index in range(len(events)):
         url = events[index]['url']
         if '/cuotas-de-partido/' in url:
@@ -89,6 +90,7 @@ def bet_finder(match_url):
     
     Returns:
         DataFrame: a simple DataFrame containing bets"""
+    
     extract = betano_extract(match_url)
     if 'data' not in extract:
         return pd.DataFrame()

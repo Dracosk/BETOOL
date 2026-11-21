@@ -5,11 +5,13 @@
 data/
 models/
 *.json
+*.md
 
 # Archivos Cache 
 __pycache__/
 *.pyc
 .pytest_cache/
+cache/
 
 # Entornos virtuales
 

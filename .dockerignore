@@ -6,8 +6,10 @@ __pycache__/
 venv/
 data/
 models/
+cache/
 
 *.json
 *.csv
 *.parquet
+*.md
 

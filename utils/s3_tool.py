@@ -1,20 +1,23 @@
 import boto3
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 NOMBRE_DEL_BUCKET = 'betool-dl'
 
 def upload_to_s3(folder, archive_name):
+    local_path = Path(archive_name)
+    key = f"{folder.rstrip('/')}/{local_path.name}"
+    
     try:
-        ruta_s3 = f"{folder}/{archive_name}"
         s3 = boto3.client('s3')
-        s3.upload_file(archive_name,NOMBRE_DEL_BUCKET, ruta_s3)
+        s3.upload_file(str(local_path),NOMBRE_DEL_BUCKET, key)
         print(f"Uploading {archive_name} to bucket{NOMBRE_DEL_BUCKET}")
         
     except Exception as e:
         print(f"Error for connecting or uploading {e}")
         return False
-    return ruta_s3 
+    return key
 
 def hash_get(route, lt_hash):
     try:
