@@ -1,5 +1,9 @@
+import hashlib
 import unicodedata
+from datetime import date
+
 import pandas as pd
+import pyarrow as pa
 
 
 MATCH_COLUMNS = (
@@ -11,13 +15,23 @@ SCORE_COLUMNS = ("home_score", "away_score")
 RUN_COLUMNS = ("run_id", "extracted_at_utc")
 SIDES = ("home", "away")
 
+ZERO_IF_BOTH_MISSING = (
+    "penalty_saves", "red_cards", "yellow_cards", "hit_woodwork",
+    "offsides", "fouled_in_final_third", "punches", "high_claims", "through_balls",
+    "errors_lead_to_a_shot", "errors_lead_to_a_goal", "big_saves",
+)
+
 COUNT_STATS = (
     "total_shots", "shots_on_target", "shots_off_target", "blocked_shots",
-    "shots_inside_box", "shots_outside_box", "corner_kicks",
+    "shots_inside_box", "shots_outside_box", "hit_woodwork",
     "big_chances", "big_chances_scored", "big_chances_missed",
-    "passes", "accurate_passes", "fouls", "offsides", "yellow_cards", "red_cards",
+    "corner_kicks", "touches_in_penalty_area", "final_third_entries",
+    "offsides", "fouled_in_final_third",
+    "passes", "accurate_passes", "through_balls", "throw_ins", "dispossessed",
     "total_tackles", "interceptions", "recoveries", "clearances",
-    "total_saves", "penalty_saves",
+    "errors_lead_to_a_shot", "errors_lead_to_a_goal",
+    "fouls", "free_kicks", "yellow_cards", "red_cards", "goal_kicks",
+    "goalkeeper_saves", "big_saves", "high_claims", "punches", "penalty_saves",
 )
 DECIMAL_STATS = ("expected_goals", "expected_goals_on_target", "goals_prevented")
 PERCENT_STATS = ("ball_possession", "duels", "tackles_won")
@@ -32,16 +46,27 @@ RATIO_PATTERN = (
 
 
 def normalize_team_name(name: str) -> str:
-    """Normalize a team name for matching against Betano data."""
-    normalized = unicodedata.normalize("NFD", name.lower().strip())
-    without_accents = "".join(
-        char for char in normalized if unicodedata.category(char) != "Mn"
-    )
-    return " ".join(without_accents.split())
+    """Normalize a team name using the legacy game ID rules."""
+    decomposed = unicodedata.normalize("NFD", name.lower().strip())
+    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
+
+
+def _make_game_id(home_team: str, away_team: str, match_date: date) -> str:
+    """Hash the home team, away team and calendar date in legacy order."""
+    if pd.isna(home_team) or pd.isna(away_team) or pd.isna(match_date):
+        raise ValueError("Both team names and the match date are required for game_id.")
+
+    home_name = normalize_team_name(home_team)
+    away_name = normalize_team_name(away_team)
+    if not home_name or not away_name:
+        raise ValueError("Team names cannot be empty when generating game_id.")
+
+    key = f"{home_name}_{away_name}_{match_date.isoformat()}"
+    return hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
 
 
 def clean_fixtures(raw: pd.DataFrame) -> pd.DataFrame:
-    """Preserve match identifiers and convert kickoff times to UTC."""
+    """Assign the game ID and keep the same calendar date as Betano."""
     if len(raw) == 0:
         clean = raw.reindex(columns=MATCH_COLUMNS).copy()
     else:
@@ -50,17 +75,26 @@ def clean_fixtures(raw: pd.DataFrame) -> pd.DataFrame:
 
     for column in ID_COLUMNS:
         clean[column] = pd.to_numeric(clean[column], errors="raise").astype("Int64")
+        if clean[column].isna().any():
+            raise ValueError(f"Missing required identifier: {column}")
 
-    clean["start_time"] = pd.to_datetime(
-        pd.to_numeric(clean["start_time"], errors="raise"), unit="s", utc=True
-    ).dt.as_unit("us")
-    clean["season_name"] = clean["season_name"].astype("string")
-    for side in SIDES:
-        column = f"{side}_team"
+    kickoff = pd.to_numeric(clean["start_time"], errors="raise")
+    # Betano also takes the date from the Unix timestamp without a local offset.
+    clean["start_time"] = pd.to_datetime(kickoff, unit="s").dt.date.astype(
+        pd.ArrowDtype(pa.date32())
+    )
+    for column in ("season_name", "home_team", "away_team"):
         clean[column] = clean[column].astype("string")
-        clean[f"{column}_normalized"] = (
-            clean[column].map(normalize_team_name, na_action="ignore").astype("string")
+
+    game_ids = [
+        _make_game_id(home, away, match_date)
+        for home, away, match_date in zip(
+            clean["home_team"], clean["away_team"], clean["start_time"]
         )
+    ]
+    clean.insert(0, "game_id", pd.array(game_ids, dtype="string"))
+    clean = clean.drop(columns="match_id")
+
     clean["run_id"] = run_metadata["run_id"].astype("string")
     clean["extracted_at_utc"] = pd.to_datetime(
         run_metadata["extracted_at_utc"], utc=True
@@ -97,13 +131,106 @@ def _parse_ratio(values: pd.Series) -> pd.DataFrame:
     )
 
 
+def _unblocked_shots(results: pd.DataFrame, side: str) -> pd.Series:
+    return results[f"shots_on_target_{side}"] + results[f"shots_off_target_{side}"]
+
+
+def _fill_missing_chance_zeros(
+    results: pd.DataFrame, source: pd.DataFrame, stats_ok: pd.Series, imputed: pd.Series
+) -> None:
+    """Fill a missing component only when the reported breakdown supports zero."""
+    rules = (
+        ("big_chances_scored", "big_chances_missed"),
+        ("big_chances_missed", "big_chances_scored"),
+    )
+    for missing, reported in rules:
+        columns = [f"{missing}_{side}" for side in SIDES]
+        fill = stats_ok & source[columns].isna().all(axis="columns")
+        for side in SIDES:
+            total = source[f"big_chances_{side}"].notna()
+            matches_total = results[f"big_chances_{side}"].eq(results[f"{reported}_{side}"])
+            fill &= total & matches_total.fillna(False)
+
+        results.loc[fill, columns] = 0
+        imputed.loc[fill] += f"{missing},"
+
+
+def _fill_missing_event_zeros(results: pd.DataFrame, source: pd.DataFrame) -> pd.Series:
+    """Record imputed zeros and return rows with inconsistent goal errors."""
+    stats_ok = results["stat_status"].eq("ok").fillna(False)
+    league_season = [results["league_id"], results["season_id"]]
+    imputed = pd.Series("", index=results.index, dtype="string")
+
+    for stat in (*ZERO_IF_BOTH_MISSING, "blocked_shots"):
+        columns = [f"{stat}_home", f"{stat}_away"]
+        missing_pair = source[columns].isna().all(axis="columns")
+
+        if stat == "blocked_shots":
+            # Both totals must be fully accounted for by shots on and off target.
+            supported = pd.Series(True, index=results.index)
+            for side in SIDES:
+                total = results[f"total_shots_{side}"]
+                supported &= total.eq(_unblocked_shots(results, side)).fillna(False)
+        else:
+            reported_pair = stats_ok & results[columns].notna().all(axis="columns")
+            supported = reported_pair.groupby(league_season).transform("any")
+
+        fill = stats_ok & missing_pair & supported
+        results.loc[fill, columns] = 0
+        imputed.loc[fill] += f"{stat},"
+
+    _fill_missing_chance_zeros(results, source, stats_ok, imputed)
+
+    inconsistent_goal_errors = pd.Series(False, index=results.index)
+    for side, opponent in (("home", "away"), ("away", "home")):
+        column = f"errors_lead_to_a_goal_{side}"
+        goals_conceded = results[f"{opponent}_score"]
+        inconsistent = results[column].gt(goals_conceded).fillna(False)
+        inconsistent_goal_errors |= inconsistent
+        results.loc[inconsistent, column] = pd.NA
+
+        # A team cannot give away a goal if its opponent did not score.
+        fill = stats_ok & source[column].isna() & results[column].isna() & goals_conceded.eq(0)
+        results.loc[fill, column] = 0
+        imputed.loc[fill] += f"{column},"
+
+    results["imputed_zero_stats"] = imputed.str.removesuffix(",")
+    return inconsistent_goal_errors
+
+
+def _quality_status(results: pd.DataFrame) -> pd.Series:
+    """Flag contradictory or incomplete chance counts and other event gaps."""
+    needs_review = pd.Series(False, index=results.index)
+    for side in SIDES:
+        shots = results[f"total_shots_{side}"]
+        shot_breakdown = _unblocked_shots(results, side) + results[f"blocked_shots_{side}"]
+        shot_locations = results[f"shots_inside_box_{side}"] + results[f"shots_outside_box_{side}"]
+        chances = results[f"big_chances_{side}"]
+        scored_chances = results[f"big_chances_scored_{side}"]
+        missed_chances = results[f"big_chances_missed_{side}"]
+        chance_breakdown = scored_chances + missed_chances
+
+        needs_review |= shots.ne(shot_breakdown).fillna(False)
+        needs_review |= shots.ne(shot_locations).fillna(False)
+        needs_review |= chances.ne(chance_breakdown).fillna(False)
+        needs_review |= chances.isna() | scored_chances.isna() | missed_chances.isna()
+
+    for stat in (*ZERO_IF_BOTH_MISSING, "blocked_shots"):
+        needs_review |= results[f"{stat}_home"].isna() ^ results[f"{stat}_away"].isna()
+
+    return needs_review.map({False: "ok", True: "review"}).astype("string")
+
+
 def clean_results(raw: pd.DataFrame) -> pd.DataFrame:
     """Add scores and typed statistics to the match schema."""
     clean = clean_fixtures(raw)
     scores = raw.loc[:, list(SCORE_COLUMNS)] if len(raw) else raw.reindex(columns=SCORE_COLUMNS)
     for column in SCORE_COLUMNS:
-        clean[column] = pd.to_numeric(scores[column], errors="raise").astype("Int64")
+        clean[column] = _parse_count(scores[column])
+        if clean[column].isna().any():
+            raise ValueError(f"Missing or invalid score: {column}")
 
+    raw = raw.rename(columns={"throw-ins_home": "throw_ins_home", "throw-ins_away": "throw_ins_away"})
     # SofaScore can omit a statistic entirely for a league.
     input_columns = [
         f"{stat}_{side}"
@@ -134,4 +261,9 @@ def clean_results(raw: pd.DataFrame) -> pd.DataFrame:
             for part in ("numerator", "denominator", "pct"):
                 stats[f"{stat}_{part}_{side}"] = parts[part]
 
-    return pd.concat([clean, pd.DataFrame(stats, index=clean.index)], axis="columns")
+    results = pd.concat([clean, pd.DataFrame(stats, index=clean.index)], axis="columns")
+    inconsistent_goal_errors = _fill_missing_event_zeros(results, source)
+    results["data_quality_status"] = _quality_status(results).mask(
+        inconsistent_goal_errors, "review"
+    )
+    return results

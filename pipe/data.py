@@ -206,7 +206,7 @@ async def open_tab(tournament_url, warmup = 2.0):
             url_base = tournament_url
             await tab.go_to(url_base)
             await asyncio.sleep(warmup)
-            yield tab # I use yield to avoid closing the tab when the context manager exits, allowing the caller to continue using it.
+            yield tab # I use yield to continue using the tab.
 
 async def browser_fetch(tab, url, timeout=10):
     """Fetches a URL using the provided tab, with a timeout and error handling."""
