@@ -1,7 +1,6 @@
 import hashlib
 import unicodedata
 from datetime import date
-
 import pandas as pd
 import pyarrow as pa
 
@@ -135,10 +134,74 @@ def _unblocked_shots(results: pd.DataFrame, side: str) -> pd.Series:
     return results[f"shots_on_target_{side}"] + results[f"shots_off_target_{side}"]
 
 
+def _event_zero_coverage(results: pd.DataFrame, stats_ok: pd.Series) -> dict[str, pd.Series]:
+    """Estimate event coverage separately for each league and season in the batch."""
+    season = [results["league_id"], results["season_id"]]
+    dates = pd.to_datetime(results["start_time"])
+    first = dates.groupby(season).transform("min")
+    last = dates.groupby(season).transform("max")
+    span_days = (last - first).dt.days + 1
+    third = (dates - first).dt.days.mul(3).floordiv(span_days)
+    enough_history = span_days.ge(28) & third.groupby(season).transform("nunique").eq(3)
+
+    coverage = {}
+    for stat in (*ZERO_IF_BOTH_MISSING, "big_chances"):
+        if stat == "penalty_saves":
+            continue
+        columns = [f"{stat}_home", f"{stat}_away"]
+        reported = stats_ok & results[columns].notna().all(axis="columns")
+        reported_dates = dates.where(reported)
+        dates_per_third = reported_dates.groupby([*season, third]).transform("nunique")
+        coverage[stat] = enough_history & dates_per_third.ge(2).groupby(season).transform("all")
+
+    # Penalty saves are rare. Require repeated reports and sustained keeper coverage.
+    reported = stats_ok & results[["penalty_saves_home", "penalty_saves_away"]].notna().all(axis="columns")
+    penalty_save_days = dates.where(reported).groupby(season).transform("nunique")
+    coverage["penalty_saves"] = penalty_save_days.ge(2) & coverage["big_saves"]
+    return coverage
+
+
+def summarize_stat_coverage(raw: pd.DataFrame) -> pd.DataFrame:
+    """Count raw reports by league, season, metric and calendar week."""
+    source = raw.rename(columns={"throw-ins_home": "throw_ins_home", "throw-ins_away": "throw_ins_away"})
+    groups = source[["league_id", "season_id"]].copy()
+    kickoff = pd.to_datetime(source["start_time"], unit="s")
+    groups["week_start"] = kickoff.dt.to_period("W-SUN").dt.start_time
+    stats_ok = source["stat_status"].eq("ok").fillna(False)
+    reports = []
+    for stat in (*COUNT_STATS, *DECIMAL_STATS, *PERCENT_STATS, *RATIO_STATS):
+        columns = [f"{stat}_home", f"{stat}_away"]
+        reported = source.reindex(columns=columns).notna()
+        counts = groups.assign(
+            matches=1,
+            stats_ok=stats_ok,
+            reported_both=stats_ok & reported.all(axis="columns"),
+            reported_one=stats_ok & reported.sum(axis="columns").eq(1),
+        )
+        counts = counts.groupby(list(groups.columns), as_index=False, dropna=False).sum()
+        reports.append(counts.assign(stat=stat))
+    return pd.concat(reports, ignore_index=True)
+
+
 def _fill_missing_chance_zeros(
-    results: pd.DataFrame, source: pd.DataFrame, stats_ok: pd.Series, imputed: pd.Series
+    results: pd.DataFrame,
+    source: pd.DataFrame,
+    stats_ok: pd.Series,
+    covered: pd.Series,
+    imputed: pd.Series,
 ) -> None:
-    """Fill a missing component only when the reported breakdown supports zero."""
+    """Fill validated all-missing groups and zeros supported by the breakdown."""
+    chance_stats = ("big_chances", "big_chances_scored", "big_chances_missed")
+    chance_columns = [f"{stat}_{side}" for stat in chance_stats for side in SIDES]
+    # The coverage rule applies only when the entire breakdown is absent.
+    fill = (
+        stats_ok
+        & source[chance_columns].isna().all(axis="columns")
+        & covered
+    )
+    results.loc[fill, chance_columns] = 0
+    imputed.loc[fill] += ",".join(chance_stats) + ","
+
     rules = (
         ("big_chances_scored", "big_chances_missed"),
         ("big_chances_missed", "big_chances_scored"),
@@ -158,7 +221,7 @@ def _fill_missing_chance_zeros(
 def _fill_missing_event_zeros(results: pd.DataFrame, source: pd.DataFrame) -> pd.Series:
     """Record imputed zeros and return rows with inconsistent goal errors."""
     stats_ok = results["stat_status"].eq("ok").fillna(False)
-    league_season = [results["league_id"], results["season_id"]]
+    coverage = _event_zero_coverage(results, stats_ok)
     imputed = pd.Series("", index=results.index, dtype="string")
 
     for stat in (*ZERO_IF_BOTH_MISSING, "blocked_shots"):
@@ -172,14 +235,13 @@ def _fill_missing_event_zeros(results: pd.DataFrame, source: pd.DataFrame) -> pd
                 total = results[f"total_shots_{side}"]
                 supported &= total.eq(_unblocked_shots(results, side)).fillna(False)
         else:
-            reported_pair = stats_ok & results[columns].notna().all(axis="columns")
-            supported = reported_pair.groupby(league_season).transform("any")
+            supported = coverage[stat]
 
         fill = stats_ok & missing_pair & supported
         results.loc[fill, columns] = 0
         imputed.loc[fill] += f"{stat},"
 
-    _fill_missing_chance_zeros(results, source, stats_ok, imputed)
+    _fill_missing_chance_zeros(results, source, stats_ok, coverage["big_chances"], imputed)
 
     inconsistent_goal_errors = pd.Series(False, index=results.index)
     for side, opponent in (("home", "away"), ("away", "home")):
