@@ -357,8 +357,10 @@ async def scrape_season(tab, league_id, season_id, season_name=None,*,include_st
             return assamble_results(row, *cached, season_name, source='cache')
         cache.invalidate(row['match_id'])
         try:
-           all_stats, halves = await clean_stats(tab, row['match_id'])
+            all_stats, halves = await clean_stats(tab, row['match_id'])
         except APIrequestError as exc:
+            if exc.status == 404:
+                return {**row, 'stat_status': 'unavailable', 'stat_source': None, 'stats_error': str(exc)}, None
             if (not state.config.allow_partial or not exc.retryable or exc.status == 429):
                 raise
             logging.warning(f"Skipping stats for match {row['match_id']} due to API error: {exc}")
@@ -577,9 +579,9 @@ async def timed_request(tab,api_url, retries=3, timeout= 10):
             
             except APIrequestError as exc:
                 state.errors += 1
-                logging.warning(f"Request error for {api_url}: {exc}. Attempt {attempt + 1} of {retries}. Retrying in {retry_delay:.2f} seconds.")
                 if not exc.retryable or attempt == retries - 1:
-                    raise 
+                    raise
+                logging.warning(f"Request error for {api_url}: {exc}. Attempt {attempt + 1} of {retries}. Retrying in {retry_delay:.2f} seconds.")
             await asyncio.sleep(retry_delay)
 
 

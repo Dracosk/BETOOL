@@ -10,7 +10,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 MARKET_TABS = ('popular', 'statistics', 'goals', 'handicap', 'cornerkicks', 'cards')
 PLAYER_MARKET_TYPES = {'PSCR', 'PTRC'}
-ODDS_COLUMNS = ['Home', 'Away', 'date', 'market', 'bet_name', 'odd', 'Timestamp']
+ODDS_COLUMNS = ['Home', 'Away', 'date', 'market', 'bet_name', 'odd', 'Timestamp',
+                'home_betano_id', 'away_betano_id']
 
 def betano_extract(url_name):
     """
@@ -163,8 +164,9 @@ def bet_finder(match_url):
         return pd.DataFrame(columns=ODDS_COLUMNS)
 
     timestamp = dt.now()
-    home = strip_accents(event['participants'][0]['name'].lower().strip())
-    away = strip_accents(event['participants'][1]['name'].lower().strip())
+    home_team, away_team = event['participants'][:2]
+    home = strip_accents(home_team['name'].lower().strip())
+    away = strip_accents(away_team['name'].lower().strip())
     match_date = pd.to_datetime(event['startTime'], unit='ms').date()
     full_list = []
     seen_selections = set()
@@ -195,6 +197,8 @@ def bet_finder(match_url):
             match = {
                 'Home': home,
                 'Away': away,
+                'home_betano_id': home_team.get('id'),
+                'away_betano_id': away_team.get('id'),
                 'date': match_date,
                 'market': market_name,
                 'bet_name': bet_name,
